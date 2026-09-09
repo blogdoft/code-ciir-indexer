@@ -1,0 +1,66 @@
+# Mirrors this repository to GitHub on every push (all branches and tags, deleting on the
+# GitHub side anything removed here). Requires a Forgejo repo secret configured in
+# Settings > Actions > Secrets:
+#   MIRROR_GITHUB_TOKEN - a GitHub Personal Access Token (classic, "repo" scope, or
+#   fine-grained with "Contents: read and write") for an account with push access to
+#   https://github.com/blogdoft/code-ciir-indexer.
+name: Mirror to GitHub
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["**"]
+
+# A branch push and a tag push landing close together (e.g. tagging a release right after
+# pushing main) each trigger their own run of this job. Without this, two runs can execute
+# concurrently and race on the same working directory's refs - one run's tag fetch fails with
+# "would clobber existing tag" because the other run is fetching/writing refs at the same time.
+# Each run mirrors the full current state of origin regardless of which push triggered it, so
+# it's safe (and more efficient) to drop a still-running, now-stale run in favor of the newest.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  mirror:
+    runs-on: ubuntu
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch all branches and tags
+        run: |
+          git fetch origin --prune '+refs/heads/*:refs/remotes/origin/*' '+refs/tags/*:refs/tags/*'
+          git update-ref -d refs/remotes/origin/HEAD 2>/dev/null || true
+
+      # The token is kept out of the push URL/argv on purpose: embedding it as
+      # `x-access-token:$TOKEN@github.com` would put the literal secret into
+      # this step's process arguments (visible via `ps`/`/proc/<pid>/cmdline`
+      # on the runner while the command runs) and into the generated step
+      # script on disk. Feeding it to git via an env var + inline credential
+      # helper instead means the push URL and script text never contain the
+      # secret value - the same rationale as the `http.extraHeader` auth
+      # actions/checkout already uses for the Forgejo origin above.
+      #
+      # A branch push and a tag push landing close together can each still
+      # trigger their own run of this workflow despite the concurrency guard
+      # above (Forgejo's own docs: cancellation "cannot be guaranteed" in
+      # exceptional circumstances) - if that happens, both runs race to push
+      # the same refs to GitHub and the slower one is rejected by GitHub's
+      # ref-locking ("cannot lock ref ... is at X but expected Y"). The retry
+      # clears that transient race without masking a genuine push failure,
+      # which fails both attempts identically.
+      - name: Push mirror to GitHub
+        env:
+          MIRROR_GITHUB_TOKEN: ${{ secrets.MIRROR_GITHUB_TOKEN }}
+        run: |
+          for attempt in 1 2; do
+            git -c credential.helper='!f() { echo "username=x-access-token"; echo "password=$MIRROR_GITHUB_TOKEN"; }; f' \
+              push --prune https://github.com/blogdoft/code-ciir-indexer.git \
+              "+refs/remotes/origin/*:refs/heads/*" \
+              "+refs/tags/*:refs/tags/*" && exit 0
+            echo "::warning::push to GitHub mirror failed (attempt $attempt/2) - retrying in case this is a race with an overlapping mirror run for a near-simultaneous branch/tag push"
+          done
+          exit 1
