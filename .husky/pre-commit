@@ -1,0 +1,6 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+# Runs the "pre-commit" group from task-runner.json (dotnet format, scoped to staged *.cs files
+# via the built-in ${staged} variable) and re-stages any files it reformats.
+dotnet husky run --group pre-commit

@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Ciir.Indexer.Api/Ciir.Indexer.Api.csproj" />
+    <Project Path="src/Ciir.Indexer.Application/Ciir.Indexer.Application.csproj" />
+    <Project Path="src/Ciir.Indexer.Core/Ciir.Indexer.Core.csproj" />
+    <Project Path="src/Ciir.Indexer.Infrastructure.Embeddings.Abstractions/Ciir.Indexer.Infrastructure.Embeddings.Abstractions.csproj" />
+    <Project Path="src/Ciir.Indexer.Infrastructure.Embeddings.Ollama/Ciir.Indexer.Infrastructure.Embeddings.Ollama.csproj" />
+    <Project Path="src/Ciir.Indexer.Infrastructure.Embeddings.OpenAI/Ciir.Indexer.Infrastructure.Embeddings.OpenAI.csproj" />
+    <Project Path="src/Ciir.Indexer.Infrastructure.PostgreSql/Ciir.Indexer.Infrastructure.PostgreSql.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ciir.Indexer.Api.Tests/Ciir.Indexer.Api.Tests.csproj" />
+    <Project Path="tests/Ciir.Indexer.Application.Tests/Ciir.Indexer.Application.Tests.csproj" />
+    <Project Path="tests/Ciir.Indexer.Core.Tests/Ciir.Indexer.Core.Tests.csproj" />
+    <Project Path="tests/Ciir.Indexer.Infrastructure.Embeddings.Tests/Ciir.Indexer.Infrastructure.Embeddings.Tests.csproj" />
+    <Project Path="tests/Ciir.Indexer.Infrastructure.PostgreSql.Tests/Ciir.Indexer.Infrastructure.PostgreSql.Tests.csproj" />
+  </Folder>
+</Solution>

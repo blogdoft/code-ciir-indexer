@@ -1,0 +1,33 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.17.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Ciir.Indexer.Application\Ciir.Indexer.Application.csproj" />
+    <ProjectReference Include="..\Ciir.Indexer.Infrastructure.PostgreSql\Ciir.Indexer.Infrastructure.PostgreSql.csproj" />
+    <ProjectReference Include="..\Ciir.Indexer.Infrastructure.Embeddings.Abstractions\Ciir.Indexer.Infrastructure.Embeddings.Abstractions.csproj" />
+    <ProjectReference Include="..\Ciir.Indexer.Infrastructure.Embeddings.Ollama\Ciir.Indexer.Infrastructure.Embeddings.Ollama.csproj" />
+    <ProjectReference Include="..\Ciir.Indexer.Infrastructure.Embeddings.OpenAI\Ciir.Indexer.Infrastructure.Embeddings.OpenAI.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <HuskyRoot>$(MSBuildThisFileDirectory)../../</HuskyRoot>
+    <UserSecretsId>b56df7ca-4e74-4b29-b8bd-2ef8d50c7ccd</UserSecretsId>
+  </PropertyGroup>
+
+  <!-- Provisions the pre-commit git hook on every contributor's first restore - official
+       Husky.Net recipe (https://alirezanet.github.io/Husky.Net/guide/automate.html), skipped on
+       CI runners and via the Inputs/Outputs incremental check on repeat local builds. -->
+  <Target Name="Husky" AfterTargets="Restore" Condition="'$(HUSKY)' != '0' AND '$(CI)' != 'true' AND '$(GITHUB_ACTIONS)' != 'true'" Inputs="$(HuskyRoot).config/dotnet-tools.json" Outputs="$(HuskyRoot).husky/_/install.stamp">
+    <Exec Command="dotnet tool restore" StandardOutputImportance="Low" StandardErrorImportance="High" />
+    <Exec Command="dotnet husky install" StandardOutputImportance="Low" StandardErrorImportance="High" WorkingDirectory="$(HuskyRoot)" />
+    <Touch Files="$(HuskyRoot).husky/_/install.stamp" AlwaysCreate="true" Condition="Exists('$(HuskyRoot).husky/_')" />
+    <ItemGroup>
+      <FileWrites Include="$(HuskyRoot).husky/_/install.stamp" />
+    </ItemGroup>
+  </Target>
+
+</Project>

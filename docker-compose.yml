@@ -1,0 +1,41 @@
+# Development-only PostgreSQL + pgvector for the CIIR Indexer.
+# Start:  docker compose up -d
+# Stop:   docker compose down          (add -v to also drop the data volume)
+#
+# Matches the default appsettings.json:
+#   Host=localhost;Port=5432;Database=ciir_indexer;Username=postgres;Password=postgres
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ciir-indexer-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ciir_indexer
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - ciir-indexer-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ciir_indexer"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Optional: a local Ollama server, for exercising the Ollama embedding provider without any
+  # cloud dependency. Disabled by default - start it explicitly with:
+  #   docker compose --profile ollama up -d
+  # Pull a model once the container is up, e.g.: docker exec ciir-indexer-ollama ollama pull bge-m3
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ciir-indexer-ollama
+    profiles: ["ollama"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ciir-indexer-ollama-data:/root/.ollama
+
+volumes:
+  ciir-indexer-pgdata:
+  ciir-indexer-ollama-data:
