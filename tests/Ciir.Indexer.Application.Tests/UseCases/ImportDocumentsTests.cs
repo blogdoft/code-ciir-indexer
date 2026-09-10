@@ -12,29 +12,20 @@ namespace Ciir.Indexer.Application.Tests.UseCases;
 
 public sealed class ImportDocumentsTests : IDisposable
 {
+    private const long ProjectId = 1;
+
     private readonly List<string> _tempFiles = [];
     private readonly JsonlCiirReader _reader = new();
-    private readonly IProjectStore _projectStore = Substitute.For<IProjectStore>();
     private readonly ICiirDocumentWriter _documentWriter = Substitute.For<ICiirDocumentWriter>();
     private readonly IEmbeddingGenerator _embeddingGenerator = Substitute.For<IEmbeddingGenerator>();
     private readonly IEmbeddingFingerprintGenerator _fingerprintGenerator = new EmbeddingFingerprintGenerator();
     private readonly IndexingOptions _options = new();
-    private long _nextProjectId = 1;
 
     public ImportDocumentsTests()
     {
         _embeddingGenerator.Model.Returns("bge-m3");
         _embeddingGenerator.Dimensions.Returns(2);
         _embeddingGenerator.BatchSize.Returns(32);
-
-        _projectStore
-            .EnsureProjectAsync(Arg.Any<string>(), Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => new Project
-            {
-                Id = _nextProjectId++,
-                Name = callInfo.ArgAt<string>(0),
-                EmbeddingModel = callInfo.ArgAt<EmbeddingModel>(1),
-            });
 
         _documentWriter
             .GetExistingFingerprintsAsync(Arg.Any<long>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
@@ -56,7 +47,7 @@ public sealed class ImportDocumentsTests : IDisposable
         var path = WriteJsonl(BuildDocumentLine(Sha256Of("A"), textHash: textHash, embeddingText: "some text"));
         StubGeneratedVector(0.1f, 0.2f);
 
-        var result = await CreateSut().ExecuteAsync(path, Guid.NewGuid());
+        var result = await CreateSut().ExecuteAsync(path, Guid.NewGuid(), ProjectId);
 
         result.Counters.DocumentsProcessed.ShouldBe(1);
         result.Counters.DocumentsInserted.ShouldBe(1);
@@ -81,7 +72,7 @@ public sealed class ImportDocumentsTests : IDisposable
             .GetExistingFingerprintsAsync(Arg.Any<long>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
             .Returns(new Dictionary<string, string?> { [ciirId] = matchingFingerprint });
 
-        var result = await CreateSut().ExecuteAsync(path, Guid.NewGuid());
+        var result = await CreateSut().ExecuteAsync(path, Guid.NewGuid(), ProjectId);
 
         result.Counters.EmbeddingsReused.ShouldBe(1);
         result.Counters.EmbeddingsGenerated.ShouldBe(0);
@@ -105,7 +96,7 @@ public sealed class ImportDocumentsTests : IDisposable
             .Returns(new Dictionary<string, string?> { [ciirId] = staleFingerprint });
         StubGeneratedVector(0.5f, 0.6f);
 
-        var result = await CreateSut().ExecuteAsync(path, Guid.NewGuid());
+        var result = await CreateSut().ExecuteAsync(path, Guid.NewGuid(), ProjectId);
 
         result.Counters.EmbeddingsGenerated.ShouldBe(1);
         result.Counters.EmbeddingsReused.ShouldBe(0);
@@ -125,7 +116,7 @@ public sealed class ImportDocumentsTests : IDisposable
             .Returns(new Dictionary<string, string?> { [ciirId] = staleFingerprint });
         StubGeneratedVector(0.7f, 0.8f);
 
-        var result = await CreateSut().ExecuteAsync(path, Guid.NewGuid());
+        var result = await CreateSut().ExecuteAsync(path, Guid.NewGuid(), ProjectId);
 
         result.Counters.EmbeddingsGenerated.ShouldBe(1);
     }
@@ -135,7 +126,7 @@ public sealed class ImportDocumentsTests : IDisposable
     {
         var path = WriteJsonl(BuildDocumentLine(Sha256Of("A"), textHash: null, embeddingText: null));
 
-        var result = await CreateSut().ExecuteAsync(path, Guid.NewGuid());
+        var result = await CreateSut().ExecuteAsync(path, Guid.NewGuid(), ProjectId);
 
         result.Counters.EmbeddingsGenerated.ShouldBe(0);
         result.Counters.EmbeddingsReused.ShouldBe(0);
@@ -148,18 +139,22 @@ public sealed class ImportDocumentsTests : IDisposable
     }
 
     [Fact]
-    public async Task ExecuteAsync_DocumentsFromDifferentProjects_ResolvesAndUpsertsEachProjectSeparately()
+    public async Task ExecuteAsync_RecordsWithDifferentProjectFields_AllLandUnderTheSinglePassedInProject()
     {
+        // The record's own "project" field (spec's per-record CIIR contract field) must be ignored
+        // for identity - every record in the file binds to the caller-supplied projectId regardless
+        // (spec's "Atualização — Identidade de projeto informada pelo chamador").
         var path = WriteJsonl(
             BuildDocumentLine(Sha256Of("A"), textHash: null, embeddingText: null, projectName: "ProjectA"),
             BuildDocumentLine(Sha256Of("B"), textHash: null, embeddingText: null, projectName: "ProjectB"));
 
-        await CreateSut().ExecuteAsync(path, Guid.NewGuid());
+        await CreateSut().ExecuteAsync(path, Guid.NewGuid(), ProjectId);
 
-        await _projectStore.Received(1).EnsureProjectAsync("ProjectA", Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>());
-        await _projectStore.Received(1).EnsureProjectAsync("ProjectB", Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>());
-        await _documentWriter.Received(2).UpsertBatchAsync(
-            Arg.Any<IReadOnlyCollection<CiirDocumentUpsert>>(), Arg.Any<long>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await _documentWriter.Received(1).UpsertBatchAsync(
+            Arg.Is<IReadOnlyCollection<CiirDocumentUpsert>>(batch => batch.Count == 2),
+            ProjectId,
+            Arg.Any<Guid>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -168,7 +163,7 @@ public sealed class ImportDocumentsTests : IDisposable
         var runId = Guid.NewGuid();
         var path = WriteJsonl(BuildDocumentLine(Sha256Of("A"), textHash: null, embeddingText: null));
 
-        await CreateSut().ExecuteAsync(path, runId);
+        await CreateSut().ExecuteAsync(path, runId, ProjectId);
 
         await _documentWriter.Received(1).UpsertBatchAsync(
             Arg.Any<IReadOnlyCollection<CiirDocumentUpsert>>(), Arg.Any<long>(), runId, Arg.Any<CancellationToken>());
@@ -195,7 +190,7 @@ public sealed class ImportDocumentsTests : IDisposable
     }
 
     private ImportDocuments CreateSut() =>
-        new(_reader, _projectStore, _documentWriter, _embeddingGenerator, _fingerprintGenerator, _options, NullLogger<ImportDocuments>.Instance);
+        new(_reader, _documentWriter, _embeddingGenerator, _fingerprintGenerator, _options, NullLogger<ImportDocuments>.Instance);
 
     private void StubGeneratedVector(params float[] vector)
     {

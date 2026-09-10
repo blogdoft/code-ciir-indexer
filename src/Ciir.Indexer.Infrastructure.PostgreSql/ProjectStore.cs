@@ -10,13 +10,16 @@ public sealed class ProjectStore : IProjectStore
 {
     private const string UpsertSql =
         """
-        INSERT INTO projects (name, embedding_model, embedding_dimensions)
-        VALUES (@Name, @EmbeddingModel, @EmbeddingDimensions)
+        INSERT INTO projects (name, git_url, git_raw_url, embedding_model, embedding_dimensions)
+        VALUES (@Name, @GitUrl, @GitRawUrl, @EmbeddingModel, @EmbeddingDimensions)
         ON CONFLICT (name) DO UPDATE SET
+            git_url = EXCLUDED.git_url,
+            git_raw_url = EXCLUDED.git_raw_url,
             embedding_model = EXCLUDED.embedding_model,
             embedding_dimensions = EXCLUDED.embedding_dimensions,
             updated_at = now()
-        RETURNING id AS "Id", name AS "Name", embedding_model AS "EmbeddingModel", embedding_dimensions AS "EmbeddingDimensions";
+        RETURNING id AS "Id", name AS "Name", git_url AS "GitUrl", git_raw_url AS "GitRawUrl",
+            embedding_model AS "EmbeddingModel", embedding_dimensions AS "EmbeddingDimensions";
         """;
 
     private readonly NpgsqlDataSource _dataSource;
@@ -27,23 +30,37 @@ public sealed class ProjectStore : IProjectStore
     }
 
     public async Task<Project> EnsureProjectAsync(
-        string name, EmbeddingModel embeddingModel, CancellationToken cancellationToken = default)
+        string name,
+        string? gitUrl,
+        string? gitRawUrl,
+        EmbeddingModel embeddingModel,
+        CancellationToken cancellationToken = default)
     {
         await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
 
         var row = await PostgreSqlConnections.ExecuteAsync(() => connection.QuerySingleAsync<ProjectRow>(
             new CommandDefinition(
                 UpsertSql,
-                new { Name = name, EmbeddingModel = embeddingModel.Name, EmbeddingDimensions = embeddingModel.Dimensions },
+                new
+                {
+                    Name = name,
+                    GitUrl = gitUrl,
+                    GitRawUrl = gitRawUrl,
+                    EmbeddingModel = embeddingModel.Name,
+                    EmbeddingDimensions = embeddingModel.Dimensions,
+                },
                 cancellationToken: cancellationToken)));
 
         return new Project
         {
             Id = row.Id,
             Name = row.Name,
+            GitUrl = row.GitUrl,
+            GitRawUrl = row.GitRawUrl,
             EmbeddingModel = new EmbeddingModel(row.EmbeddingModel, row.EmbeddingDimensions),
         };
     }
 
-    private sealed record ProjectRow(long Id, string Name, string EmbeddingModel, int EmbeddingDimensions);
+    private sealed record ProjectRow(
+        long Id, string Name, string? GitUrl, string? GitRawUrl, string EmbeddingModel, int EmbeddingDimensions);
 }

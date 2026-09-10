@@ -5,7 +5,7 @@ namespace Ciir.Indexer.Application.Ports;
 /// <summary>Persists <see cref="IndexingRun"/> execution state (spec §26/§27).</summary>
 public interface IIndexingRunStore
 {
-    Task<IndexingRun> CreateAsync(string path, CancellationToken cancellationToken = default);
+    Task<IndexingRun> CreateAsync(string path, long projectId, CancellationToken cancellationToken = default);
 
     Task UpdateCountersAsync(Guid runId, IndexingCounters counters, CancellationToken cancellationToken = default);
 

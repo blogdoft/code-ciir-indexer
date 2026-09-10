@@ -11,6 +11,8 @@ public sealed record IndexingRun
 
     public required string Path { get; init; }
 
+    public required long ProjectId { get; init; }
+
     public required IndexingStatus Status { get; init; }
 
     public required DateTimeOffset StartedAt { get; init; }

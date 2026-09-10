@@ -13,7 +13,8 @@ public sealed class IndexingRunStore : IIndexingRunStore
     // materializes into IndexingRunRow needs an explicit alias matching the parameter name exactly.
     private const string RunColumns =
         """
-        id AS "Id", path AS "Path", status AS "Status", started_at AS "StartedAt", finished_at AS "FinishedAt",
+        id AS "Id", path AS "Path", project_id AS "ProjectId", status AS "Status", started_at AS "StartedAt",
+        finished_at AS "FinishedAt",
         documents_processed AS "DocumentsProcessed", documents_inserted AS "DocumentsInserted",
         documents_updated AS "DocumentsUpdated", embeddings_generated AS "EmbeddingsGenerated",
         embeddings_reused AS "EmbeddingsReused", relations_processed AS "RelationsProcessed",
@@ -22,8 +23,8 @@ public sealed class IndexingRunStore : IIndexingRunStore
 
     private const string InsertSql =
         $"""
-        INSERT INTO indexing_runs (id, path, status, started_at)
-        VALUES (@Id, @Path, @Status, @StartedAt)
+        INSERT INTO indexing_runs (id, path, project_id, status, started_at)
+        VALUES (@Id, @Path, @ProjectId, @Status, @StartedAt)
         RETURNING {RunColumns};
         """;
 
@@ -73,14 +74,21 @@ public sealed class IndexingRunStore : IIndexingRunStore
         _dataSource = dataSource;
     }
 
-    public async Task<IndexingRun> CreateAsync(string path, CancellationToken cancellationToken = default)
+    public async Task<IndexingRun> CreateAsync(string path, long projectId, CancellationToken cancellationToken = default)
     {
         await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
 
         var row = await PostgreSqlConnections.ExecuteAsync(() => connection.QuerySingleAsync<IndexingRunRow>(
             new CommandDefinition(
                 InsertSql,
-                new { Id = Guid.NewGuid(), Path = path, Status = IndexingStatus.Pending.ToWireString(), StartedAt = DateTimeOffset.UtcNow },
+                new
+                {
+                    Id = Guid.NewGuid(),
+                    Path = path,
+                    ProjectId = projectId,
+                    Status = IndexingStatus.Pending.ToWireString(),
+                    StartedAt = DateTimeOffset.UtcNow,
+                },
                 cancellationToken: cancellationToken)));
 
         return row.ToDomain();
@@ -147,6 +155,7 @@ public sealed class IndexingRunStore : IIndexingRunStore
     private sealed record IndexingRunRow(
         Guid Id,
         string Path,
+        long ProjectId,
         string Status,
         DateTime StartedAt,
         DateTime? FinishedAt,
@@ -164,6 +173,7 @@ public sealed class IndexingRunStore : IIndexingRunStore
         {
             Id = Id,
             Path = Path,
+            ProjectId = ProjectId,
             Status = IndexingStatusExtensions.ParseIndexingStatus(Status),
             StartedAt = new DateTimeOffset(DateTime.SpecifyKind(StartedAt, DateTimeKind.Utc)),
             FinishedAt = FinishedAt is { } finishedAt ? new DateTimeOffset(DateTime.SpecifyKind(finishedAt, DateTimeKind.Utc)) : null,

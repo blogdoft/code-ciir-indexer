@@ -37,22 +37,24 @@ public sealed class IndexationsController : ControllerBase
 
     /// <summary>Starts a new indexation of the given CIIR JSONL file.</summary>
     /// <remarks>
-    /// Validates <paramref name="request"/>'s <c>path</c> against the server's configured allowed
-    /// input roots (spec §42), creates a new indexation run, and hands it off to the background
-    /// worker for execution - this endpoint returns as soon as the run is queued, before any
-    /// document or relation has actually been imported. Poll
+    /// Validates <paramref name="request"/>'s <c>projectName</c> (required) and <c>path</c> against
+    /// the server's configured allowed input roots (spec §42), resolves the caller-supplied project
+    /// every record in the file will be bound to - each CIIR record's own <c>project</c> field is
+    /// still parsed/validated but ignored for identity purposes - creates a new indexation run, and
+    /// hands it off to the background worker for execution. This endpoint returns as soon as the
+    /// run is queued, before any document or relation has actually been imported. Poll
     /// <c>GET /api/indexations/{indexationId}</c> with the id returned here to observe progress and
     /// the final outcome. Submitting the same file again is safe and idempotent: unchanged
     /// documents/relations are left untouched, and any document or relation no longer present in
     /// the file is removed only once the new run completes successfully.
     /// </remarks>
-    /// <param name="request">The request body naming the CIIR JSONL file to import.</param>
+    /// <param name="request">The request body naming the target project and the CIIR JSONL file to import.</param>
     /// <param name="cancellationToken">Propagates request cancellation.</param>
     /// <returns>
     /// <c>202 Accepted</c> with an <see cref="IndexationAcceptedResponse"/> when the run was
     /// created and queued; <c>400</c>/<c>403</c>/<c>404</c> Problem Details when
-    /// <paramref name="request"/>'s path fails validation (missing, outside the allowed roots, or
-    /// does not exist/have the expected extension).
+    /// <paramref name="request"/> fails validation (missing project name; path missing, outside the
+    /// allowed roots, or does not exist/have the expected extension).
     /// </returns>
     [HttpPost]
     [ProducesResponseType<IndexationAcceptedResponse>(StatusCodes.Status202Accepted, "application/json")]
@@ -61,7 +63,8 @@ public sealed class IndexationsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> StartAsync([FromBody] StartIndexationRequest request, CancellationToken cancellationToken)
     {
-        var result = await _startIndexation.ExecuteAsync(request.Path, cancellationToken);
+        var result = await _startIndexation.ExecuteAsync(
+            request.ProjectName, request.Path, request.GitUrl, request.GitRawUrl, cancellationToken);
 
         return result.Map(
             onSuccess: run => (IActionResult)Accepted(new IndexationAcceptedResponse(run.Id, run.Status.ToWireString())),

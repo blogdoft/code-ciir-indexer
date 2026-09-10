@@ -30,7 +30,7 @@ public sealed class SchemaConstraintsTests
     public async Task Ciir_documents_RawDuplicateInsert_ViolatesTheProjectCiirIdUniqueConstraint()
     {
         var project = await _projectStore.EnsureProjectAsync(
-            TestData.NewProjectName(), new EmbeddingModel("bge-m3", PostgreSqlFixture.EmbeddingDimensions));
+            TestData.NewProjectName(), null, null, new EmbeddingModel("bge-m3", PostgreSqlFixture.EmbeddingDimensions));
         var document = TestData.BuildDocument();
         await _documentWriter.UpsertBatchAsync([TestData.BuildUpsert(document)], project.Id, Guid.NewGuid());
 
@@ -49,7 +49,7 @@ public sealed class SchemaConstraintsTests
     public async Task Ciir_relations_DeletingReferencedDocument_CascadesToDeleteTheRelation()
     {
         var project = await _projectStore.EnsureProjectAsync(
-            TestData.NewProjectName(), new EmbeddingModel("bge-m3", PostgreSqlFixture.EmbeddingDimensions));
+            TestData.NewProjectName(), null, null, new EmbeddingModel("bge-m3", PostgreSqlFixture.EmbeddingDimensions));
         var source = TestData.BuildDocument();
         var target = TestData.BuildDocument();
         await _documentWriter.UpsertBatchAsync(

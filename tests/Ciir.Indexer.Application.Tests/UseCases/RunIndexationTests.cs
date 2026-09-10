@@ -13,9 +13,10 @@ namespace Ciir.Indexer.Application.Tests.UseCases;
 
 public sealed class RunIndexationTests : IDisposable
 {
+    private const long ProjectId = 1;
+
     private readonly List<string> _tempFiles = [];
     private readonly JsonlCiirReader _reader = new();
-    private readonly IProjectStore _projectStore = Substitute.For<IProjectStore>();
     private readonly ICiirDocumentWriter _documentWriter = Substitute.For<ICiirDocumentWriter>();
     private readonly ICiirRelationWriter _relationWriter = Substitute.For<ICiirRelationWriter>();
     private readonly IEmbeddingGenerator _embeddingGenerator = Substitute.For<IEmbeddingGenerator>();
@@ -23,29 +24,12 @@ public sealed class RunIndexationTests : IDisposable
     private readonly IRelationResolver _relationResolver = Substitute.For<IRelationResolver>();
     private readonly IIndexingRunStore _runStore = Substitute.For<IIndexingRunStore>();
     private readonly IndexingOptions _options = new();
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _projectIdsByName = new(StringComparer.Ordinal);
-    private long _nextProjectId;
 
     public RunIndexationTests()
     {
         _embeddingGenerator.Model.Returns("bge-m3");
         _embeddingGenerator.Dimensions.Returns(2);
         _embeddingGenerator.BatchSize.Returns(32);
-
-        // Mirrors the real IProjectStore's upsert semantics (same name -> same id) - ImportDocuments
-        // and ImportRelations run concurrently (spec §4, via RunIndexation's Task.WhenAll), each
-        // resolving the project independently, so both the id allocation and the cache lookup must
-        // be genuinely thread-safe - a plain Dictionary raced here and handed the two use cases
-        // different ids for the same project name, unlike the real Postgres-backed implementation's
-        // atomic upsert.
-        _projectStore
-            .EnsureProjectAsync(Arg.Any<string>(), Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo =>
-            {
-                var name = callInfo.ArgAt<string>(0);
-                var id = _projectIdsByName.GetOrAdd(name, _ => Interlocked.Increment(ref _nextProjectId));
-                return new Project { Id = id, Name = name, EmbeddingModel = callInfo.ArgAt<EmbeddingModel>(1) };
-            });
 
         _documentWriter
             .GetExistingFingerprintsAsync(Arg.Any<long>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
@@ -70,7 +54,7 @@ public sealed class RunIndexationTests : IDisposable
         var runId = Guid.NewGuid();
         var path = WriteJsonl(BuildDocumentLine(Sha256Of("A"), relationCount: 1));
 
-        await CreateSut().ExecuteAsync(runId, path);
+        await CreateSut().ExecuteAsync(runId, path, ProjectId);
 
         Received.InOrder(() =>
         {
@@ -88,7 +72,7 @@ public sealed class RunIndexationTests : IDisposable
         var runId = Guid.NewGuid();
         var path = WriteJsonl(BuildDocumentLine(Sha256Of("A"), relationCount: 1));
 
-        await CreateSut().ExecuteAsync(runId, path);
+        await CreateSut().ExecuteAsync(runId, path, ProjectId);
 
         await _runStore.Received(1).UpdateCountersAsync(
             runId,
@@ -106,12 +90,12 @@ public sealed class RunIndexationTests : IDisposable
         var runId = Guid.NewGuid();
         var path = WriteJsonl(BuildDocumentLine(Sha256Of("A"), relationCount: 1));
 
-        await CreateSut().ExecuteAsync(runId, path);
+        await CreateSut().ExecuteAsync(runId, path, ProjectId);
 
         Received.InOrder(() =>
         {
-            _relationWriter.DeleteStaleAsync(Arg.Any<long>(), runId, Arg.Any<CancellationToken>());
-            _documentWriter.DeleteStaleAsync(Arg.Any<long>(), runId, Arg.Any<CancellationToken>());
+            _relationWriter.DeleteStaleAsync(ProjectId, runId, Arg.Any<CancellationToken>());
+            _documentWriter.DeleteStaleAsync(ProjectId, runId, Arg.Any<CancellationToken>());
         });
     }
 
@@ -120,11 +104,11 @@ public sealed class RunIndexationTests : IDisposable
     {
         var runId = Guid.NewGuid();
         var path = WriteJsonl(BuildDocumentLine(Sha256Of("A"), relationCount: 1));
-        _projectStore
-            .EnsureProjectAsync(Arg.Any<string>(), Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>())
+        _documentWriter
+            .GetExistingFingerprintsAsync(Arg.Any<long>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
             .Throws(new InvalidOperationException("database unavailable"));
 
-        await CreateSut().ExecuteAsync(runId, path);
+        await CreateSut().ExecuteAsync(runId, path, ProjectId);
 
         await _runStore.Received(1).MarkStatusAsync(
             runId, IndexingStatus.Failed, Arg.Is<string>(m => m.Contains("database unavailable")), Arg.Any<CancellationToken>());
@@ -140,11 +124,11 @@ public sealed class RunIndexationTests : IDisposable
         // leak an exception to the caller, which is a fire-and-forget background worker (spec §33).
         var runId = Guid.NewGuid();
         var path = WriteJsonl(BuildDocumentLine(Sha256Of("A"), relationCount: 1));
-        _projectStore
-            .EnsureProjectAsync(Arg.Any<string>(), Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>())
+        _documentWriter
+            .GetExistingFingerprintsAsync(Arg.Any<long>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
             .Throws(new InvalidOperationException("boom"));
 
-        await Should.NotThrowAsync(() => CreateSut().ExecuteAsync(runId, path));
+        await Should.NotThrowAsync(() => CreateSut().ExecuteAsync(runId, path, ProjectId));
     }
 
     [Fact]
@@ -154,7 +138,7 @@ public sealed class RunIndexationTests : IDisposable
         var path = WriteJsonl(BuildDocumentLine(Sha256Of("A"), relationCount: 1));
         _relationResolver.ResolveAsync(Arg.Any<long>(), Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>()).Throws(new InvalidOperationException("resolver failed"));
 
-        await CreateSut().ExecuteAsync(runId, path);
+        await CreateSut().ExecuteAsync(runId, path, ProjectId);
 
         await _runStore.Received(1).MarkStatusAsync(runId, IndexingStatus.Failed, Arg.Any<string>(), Arg.Any<CancellationToken>());
         await _relationWriter.DidNotReceive().DeleteStaleAsync(Arg.Any<long>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
@@ -165,30 +149,33 @@ public sealed class RunIndexationTests : IDisposable
     {
         var runId = Guid.NewGuid();
         var path = WriteJsonl(BuildDocumentLine(Sha256Of("A"), relationCount: 1));
-        _projectStore
-            .EnsureProjectAsync(Arg.Any<string>(), Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>())
+        _documentWriter
+            .GetExistingFingerprintsAsync(Arg.Any<long>(), Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
             .Throws(new OperationCanceledException());
 
-        await CreateSut().ExecuteAsync(runId, path);
+        await CreateSut().ExecuteAsync(runId, path, ProjectId);
 
         await _runStore.Received(1).MarkStatusAsync(runId, IndexingStatus.Cancelled, null, Arg.Any<CancellationToken>());
         await _runStore.DidNotReceive().MarkStatusAsync(runId, IndexingStatus.Failed, Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task ExecuteAsync_MultipleProjectsTouchedByTheRun_DeletesStaleEntitiesForEachOne()
+    public async Task ExecuteAsync_RecordsWithDifferentProjectFields_AllBindToTheSinglePassedInProject()
     {
+        // The record's own "project" field is ignored for identity - a single run always resolves
+        // relations/cleanup for exactly the caller-supplied projectId (spec's "Atualização —
+        // Identidade de projeto informada pelo chamador"), regardless of what each record claims.
         var runId = Guid.NewGuid();
         var path = WriteJsonl(
             BuildDocumentLine(Sha256Of("A"), relationCount: 1, projectName: "ProjectA"),
             BuildDocumentLine(Sha256Of("B"), relationCount: 1, projectName: "ProjectB"));
 
-        await CreateSut().ExecuteAsync(runId, path);
+        await CreateSut().ExecuteAsync(runId, path, ProjectId);
 
-        await _relationResolver.Received(1).ResolveAsync(1, Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>());
-        await _relationResolver.Received(1).ResolveAsync(2, Arg.Any<IReadOnlyCollection<long>>(), Arg.Any<CancellationToken>());
-        await _documentWriter.Received(1).DeleteStaleAsync(1, runId, Arg.Any<CancellationToken>());
-        await _documentWriter.Received(1).DeleteStaleAsync(2, runId, Arg.Any<CancellationToken>());
+        await _relationResolver.Received(1).ResolveAsync(
+            ProjectId, Arg.Is<IReadOnlyCollection<long>>(ids => ids.Count == 1 && ids.Contains(ProjectId)), Arg.Any<CancellationToken>());
+        await _documentWriter.Received(1).DeleteStaleAsync(ProjectId, runId, Arg.Any<CancellationToken>());
+        await _relationWriter.Received(1).DeleteStaleAsync(ProjectId, runId, Arg.Any<CancellationToken>());
     }
 
     private static string BuildDocumentLine(string ciirId, int relationCount, string projectName = "MyProject")
@@ -216,9 +203,9 @@ public sealed class RunIndexationTests : IDisposable
     private RunIndexation CreateSut()
     {
         var importDocuments = new ImportDocuments(
-            _reader, _projectStore, _documentWriter, _embeddingGenerator, _fingerprintGenerator, _options, NullLogger<ImportDocuments>.Instance);
+            _reader, _documentWriter, _embeddingGenerator, _fingerprintGenerator, _options, NullLogger<ImportDocuments>.Instance);
         var importRelations = new ImportRelations(
-            _reader, _projectStore, _relationWriter, _embeddingGenerator, _options, NullLogger<ImportRelations>.Instance);
+            _reader, _relationWriter, _options, NullLogger<ImportRelations>.Instance);
         var resolveRelations = new ResolveRelations(_relationResolver);
 
         return new RunIndexation(

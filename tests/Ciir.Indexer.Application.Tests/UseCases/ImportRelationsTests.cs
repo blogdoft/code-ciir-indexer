@@ -12,28 +12,12 @@ namespace Ciir.Indexer.Application.Tests.UseCases;
 
 public sealed class ImportRelationsTests : IDisposable
 {
+    private const long ProjectId = 1;
+
     private readonly List<string> _tempFiles = [];
     private readonly JsonlCiirReader _reader = new();
-    private readonly IProjectStore _projectStore = Substitute.For<IProjectStore>();
     private readonly ICiirRelationWriter _relationWriter = Substitute.For<ICiirRelationWriter>();
-    private readonly IEmbeddingGenerator _embeddingGenerator = Substitute.For<IEmbeddingGenerator>();
     private readonly IndexingOptions _options = new();
-    private long _nextProjectId = 1;
-
-    public ImportRelationsTests()
-    {
-        _embeddingGenerator.Model.Returns("bge-m3");
-        _embeddingGenerator.Dimensions.Returns(2);
-
-        _projectStore
-            .EnsureProjectAsync(Arg.Any<string>(), Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>())
-            .Returns(callInfo => new Project
-            {
-                Id = _nextProjectId++,
-                Name = callInfo.ArgAt<string>(0),
-                EmbeddingModel = callInfo.ArgAt<EmbeddingModel>(1),
-            });
-    }
 
     public void Dispose()
     {
@@ -48,7 +32,7 @@ public sealed class ImportRelationsTests : IDisposable
     {
         var path = WriteJsonl(BuildDocumentLine(Sha256Of("A"), relationCount: 2));
 
-        var result = await CreateSut().ExecuteAsync(path, Guid.NewGuid());
+        var result = await CreateSut().ExecuteAsync(path, Guid.NewGuid(), ProjectId);
 
         result.Counters.RelationsProcessed.ShouldBe(2);
         await _relationWriter.Received(1).UpsertBatchAsync(
@@ -63,7 +47,7 @@ public sealed class ImportRelationsTests : IDisposable
     {
         var path = WriteJsonl(BuildDocumentLine(Sha256Of("A"), relationCount: 0));
 
-        var result = await CreateSut().ExecuteAsync(path, Guid.NewGuid());
+        var result = await CreateSut().ExecuteAsync(path, Guid.NewGuid(), ProjectId);
 
         result.Counters.RelationsProcessed.ShouldBe(0);
         await _relationWriter.DidNotReceive().UpsertBatchAsync(
@@ -78,7 +62,7 @@ public sealed class ImportRelationsTests : IDisposable
             BuildDocumentLine(Sha256Of("A"), relationCount: 2),
             BuildDocumentLine(Sha256Of("B"), relationCount: 1));
 
-        await CreateSut().ExecuteAsync(path, Guid.NewGuid());
+        await CreateSut().ExecuteAsync(path, Guid.NewGuid(), ProjectId);
 
         // First flush at the batch-size threshold (2 relations from A), second flush for the
         // remaining 1 relation from B at end-of-file.
@@ -87,18 +71,22 @@ public sealed class ImportRelationsTests : IDisposable
     }
 
     [Fact]
-    public async Task ExecuteAsync_RecordsFromDifferentProjects_AreFlushedSeparatelyPerProject()
+    public async Task ExecuteAsync_RecordsWithDifferentProjectFields_AllLandUnderTheSinglePassedInProject()
     {
+        // The record's own "project" field (spec's per-record CIIR contract field) must be ignored
+        // for identity - every relation in the file binds to the caller-supplied projectId
+        // regardless (spec's "Atualização — Identidade de projeto informada pelo chamador").
         var path = WriteJsonl(
             BuildDocumentLine(Sha256Of("A"), relationCount: 1, projectName: "ProjectA"),
             BuildDocumentLine(Sha256Of("B"), relationCount: 1, projectName: "ProjectB"));
 
-        await CreateSut().ExecuteAsync(path, Guid.NewGuid());
+        await CreateSut().ExecuteAsync(path, Guid.NewGuid(), ProjectId);
 
-        await _projectStore.Received(1).EnsureProjectAsync("ProjectA", Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>());
-        await _projectStore.Received(1).EnsureProjectAsync("ProjectB", Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>());
-        await _relationWriter.Received(2).UpsertBatchAsync(
-            Arg.Any<IReadOnlyCollection<CiirRelation>>(), Arg.Any<long>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        await _relationWriter.Received(1).UpsertBatchAsync(
+            Arg.Is<IReadOnlyCollection<CiirRelation>>(batch => batch.Count == 2),
+            ProjectId,
+            Arg.Any<Guid>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -107,7 +95,7 @@ public sealed class ImportRelationsTests : IDisposable
         var runId = Guid.NewGuid();
         var path = WriteJsonl(BuildDocumentLine(Sha256Of("A"), relationCount: 1));
 
-        await CreateSut().ExecuteAsync(path, runId);
+        await CreateSut().ExecuteAsync(path, runId, ProjectId);
 
         await _relationWriter.Received(1).UpsertBatchAsync(
             Arg.Any<IReadOnlyCollection<CiirRelation>>(), Arg.Any<long>(), runId, Arg.Any<CancellationToken>());
@@ -119,7 +107,7 @@ public sealed class ImportRelationsTests : IDisposable
         var validLine = BuildDocumentLine(Sha256Of("A"), relationCount: 1);
         var path = WriteJsonl("{ not valid json", validLine);
 
-        var result = await CreateSut().ExecuteAsync(path, Guid.NewGuid());
+        var result = await CreateSut().ExecuteAsync(path, Guid.NewGuid(), ProjectId);
 
         result.Counters.RelationsProcessed.ShouldBe(1);
     }
@@ -147,7 +135,7 @@ public sealed class ImportRelationsTests : IDisposable
     }
 
     private ImportRelations CreateSut() =>
-        new(_reader, _projectStore, _relationWriter, _embeddingGenerator, _options, NullLogger<ImportRelations>.Instance);
+        new(_reader, _relationWriter, _options, NullLogger<ImportRelations>.Instance);
 
     private string WriteJsonl(params string[] lines)
     {

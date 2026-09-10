@@ -53,7 +53,7 @@ public sealed class IndexationWorker : BackgroundService
                 continue;
             }
 
-            await _runIndexation.ExecuteAsync(runId, run.Path, stoppingToken);
+            await _runIndexation.ExecuteAsync(runId, run.Path, run.ProjectId, stoppingToken);
         }
     }
 }

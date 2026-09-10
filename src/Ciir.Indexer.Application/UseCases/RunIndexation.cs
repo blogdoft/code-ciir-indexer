@@ -47,37 +47,33 @@ public sealed class RunIndexation
     /// </summary>
     /// <param name="runId">The run to execute.</param>
     /// <param name="path">The validated, absolute CIIR JSONL path to index.</param>
+    /// <param name="projectId">
+    /// The project every record in the file is bound to, already resolved by
+    /// <c>StartIndexation</c> from the caller-supplied request - never derived from any record's
+    /// own <c>project</c> field.
+    /// </param>
     /// <param name="cancellationToken">Propagates run cancellation.</param>
-    public async Task ExecuteAsync(Guid runId, string path, CancellationToken cancellationToken = default)
+    public async Task ExecuteAsync(Guid runId, string path, long projectId, CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
         try
         {
             await _runStore.MarkStatusAsync(runId, IndexingStatus.Running, cancellationToken: cancellationToken);
 
-            var documentsTask = _importDocuments.ExecuteAsync(path, runId, cancellationToken);
-            var relationsTask = _importRelations.ExecuteAsync(path, runId, cancellationToken);
+            var documentsTask = _importDocuments.ExecuteAsync(path, runId, projectId, cancellationToken);
+            var relationsTask = _importRelations.ExecuteAsync(path, runId, projectId, cancellationToken);
             await Task.WhenAll(documentsTask, relationsTask);
             var documentsResult = await documentsTask;
             var relationsResult = await relationsTask;
 
-            var projectIds = documentsResult.ProjectIds.Union(relationsResult.ProjectIds).ToArray();
-
             await _runStore.MarkStatusAsync(runId, IndexingStatus.ResolvingRelations, cancellationToken: cancellationToken);
-            var resolutionCounters = await _resolveRelations.ExecuteAsync(projectIds, cancellationToken);
+            var resolutionCounters = await _resolveRelations.ExecuteAsync([projectId], cancellationToken);
 
             var counters = Merge(documentsResult.Counters, relationsResult.Counters, resolutionCounters);
             await _runStore.UpdateCountersAsync(runId, counters, cancellationToken);
 
-            foreach (var projectId in projectIds)
-            {
-                await _relationWriter.DeleteStaleAsync(projectId, runId, cancellationToken);
-            }
-
-            foreach (var projectId in projectIds)
-            {
-                await _documentWriter.DeleteStaleAsync(projectId, runId, cancellationToken);
-            }
+            await _relationWriter.DeleteStaleAsync(projectId, runId, cancellationToken);
+            await _documentWriter.DeleteStaleAsync(projectId, runId, cancellationToken);
 
             await _runStore.MarkStatusAsync(runId, IndexingStatus.Completed, cancellationToken: cancellationToken);
 

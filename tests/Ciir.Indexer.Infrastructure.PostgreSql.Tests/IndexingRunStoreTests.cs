@@ -10,19 +10,24 @@ namespace Ciir.Indexer.Infrastructure.PostgreSql.Tests;
 public sealed class IndexingRunStoreTests
 {
     private readonly IIndexingRunStore _sut;
+    private readonly IProjectStore _projectStore;
 
     public IndexingRunStoreTests(PostgreSqlFixture fixture)
     {
         _sut = fixture.Services.GetRequiredService<IIndexingRunStore>();
+        _projectStore = fixture.Services.GetRequiredService<IProjectStore>();
     }
 
     [Fact]
     public async Task CreateAsync_NewRun_StartsInPendingStatus()
     {
-        var run = await _sut.CreateAsync("/data/ciir/ciir.jsonl");
+        var projectId = await CreateProjectAsync();
+
+        var run = await _sut.CreateAsync("/data/ciir/ciir.jsonl", projectId);
 
         run.Id.ShouldNotBe(Guid.Empty);
         run.Path.ShouldBe("/data/ciir/ciir.jsonl");
+        run.ProjectId.ShouldBe(projectId);
         run.Status.ShouldBe(IndexingStatus.Pending);
         run.FinishedAt.ShouldBeNull();
     }
@@ -30,7 +35,8 @@ public sealed class IndexingRunStoreTests
     [Fact]
     public async Task UpdateCountersAsync_ThenGetAsync_ReflectsTheUpdatedCounters()
     {
-        var run = await _sut.CreateAsync("/data/ciir/ciir.jsonl");
+        var projectId = await CreateProjectAsync();
+        var run = await _sut.CreateAsync("/data/ciir/ciir.jsonl", projectId);
         var counters = new IndexingCounters
         {
             DocumentsProcessed = 10,
@@ -53,7 +59,8 @@ public sealed class IndexingRunStoreTests
     [Fact]
     public async Task MarkStatusAsync_Completed_SetsStatusAndFinishedAt()
     {
-        var run = await _sut.CreateAsync("/data/ciir/ciir.jsonl");
+        var projectId = await CreateProjectAsync();
+        var run = await _sut.CreateAsync("/data/ciir/ciir.jsonl", projectId);
 
         await _sut.MarkStatusAsync(run.Id, IndexingStatus.Completed);
         var reloaded = await _sut.GetAsync(run.Id);
@@ -66,7 +73,8 @@ public sealed class IndexingRunStoreTests
     [Fact]
     public async Task MarkStatusAsync_Failed_StoresTheErrorMessage()
     {
-        var run = await _sut.CreateAsync("/data/ciir/ciir.jsonl");
+        var projectId = await CreateProjectAsync();
+        var run = await _sut.CreateAsync("/data/ciir/ciir.jsonl", projectId);
 
         await _sut.MarkStatusAsync(run.Id, IndexingStatus.Failed, "boom");
         var reloaded = await _sut.GetAsync(run.Id);
@@ -87,7 +95,8 @@ public sealed class IndexingRunStoreTests
     [Fact]
     public async Task ReconcileOrphanedRunsAsync_RunLeftRunning_IsMarkedFailed()
     {
-        var run = await _sut.CreateAsync("/data/ciir/ciir.jsonl");
+        var projectId = await CreateProjectAsync();
+        var run = await _sut.CreateAsync("/data/ciir/ciir.jsonl", projectId);
         await _sut.MarkStatusAsync(run.Id, IndexingStatus.Running);
 
         var reconciled = await _sut.ReconcileOrphanedRunsAsync();
@@ -100,11 +109,19 @@ public sealed class IndexingRunStoreTests
     [Fact]
     public async Task ReconcileOrphanedRunsAsync_RunAlreadyCompleted_IsNotTouched()
     {
-        var run = await _sut.CreateAsync("/data/ciir/ciir.jsonl");
+        var projectId = await CreateProjectAsync();
+        var run = await _sut.CreateAsync("/data/ciir/ciir.jsonl", projectId);
         await _sut.MarkStatusAsync(run.Id, IndexingStatus.Completed);
 
         var reconciled = await _sut.ReconcileOrphanedRunsAsync();
 
         reconciled.ShouldNotContain(run.Id);
+    }
+
+    private async Task<long> CreateProjectAsync()
+    {
+        var project = await _projectStore.EnsureProjectAsync(
+            TestData.NewProjectName(), null, null, new EmbeddingModel("bge-m3", PostgreSqlFixture.EmbeddingDimensions));
+        return project.Id;
     }
 }

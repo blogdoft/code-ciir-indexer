@@ -14,17 +14,30 @@ namespace Ciir.Indexer.Api.Tests.Controllers;
 public sealed class IndexationsControllerTests
 {
     private readonly IInputResolver _inputResolver = Substitute.For<IInputResolver>();
+    private readonly IProjectStore _projectStore = Substitute.For<IProjectStore>();
+    private readonly IEmbeddingGenerator _embeddingGenerator = Substitute.For<IEmbeddingGenerator>();
     private readonly IIndexingRunStore _runStore = Substitute.For<IIndexingRunStore>();
     private readonly IIndexationQueue _queue = Substitute.For<IIndexationQueue>();
 
+    public IndexationsControllerTests()
+    {
+        _embeddingGenerator.Model.Returns("bge-m3");
+        _embeddingGenerator.Dimensions.Returns(1024);
+    }
+
     [Fact]
-    public async Task StartAsync_ValidPath_ReturnsAcceptedWithTheRunIdAndStatus()
+    public async Task StartAsync_ValidRequest_ReturnsAcceptedWithTheRunIdAndStatus()
     {
         _inputResolver.ResolveAndValidate("/data/ciir/ciir.jsonl").Returns(Result<string>.FromSuccess("/data/ciir/ciir.jsonl"));
-        var run = BuildRun(IndexingStatus.Pending);
-        _runStore.CreateAsync("/data/ciir/ciir.jsonl", Arg.Any<CancellationToken>()).Returns(run);
+        var project = BuildProject();
+        _projectStore
+            .EnsureProjectAsync("MyProject", null, null, Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>())
+            .Returns(project);
+        var run = BuildRun(IndexingStatus.Pending, project.Id);
+        _runStore.CreateAsync("/data/ciir/ciir.jsonl", project.Id, Arg.Any<CancellationToken>()).Returns(run);
 
-        var result = await CreateSut().StartAsync(new StartIndexationRequest("/data/ciir/ciir.jsonl"), CancellationToken.None);
+        var result = await CreateSut().StartAsync(
+            new StartIndexationRequest("MyProject", "/data/ciir/ciir.jsonl"), CancellationToken.None);
 
         var accepted = result.ShouldBeOfType<AcceptedResult>();
         var body = accepted.Value.ShouldBeOfType<IndexationAcceptedResponse>();
@@ -39,11 +52,24 @@ public sealed class IndexationsControllerTests
             .ResolveAndValidate(Arg.Any<string>())
             .Returns(Result<string>.FromFailure(new Failure("403-path-not-allowed", "not allowed")));
 
-        var result = await CreateSut().StartAsync(new StartIndexationRequest("/etc/passwd"), CancellationToken.None);
+        var result = await CreateSut().StartAsync(
+            new StartIndexationRequest("MyProject", "/etc/passwd"), CancellationToken.None);
 
         var objectResult = result.ShouldBeOfType<ObjectResult>();
         objectResult.StatusCode.ShouldBe(StatusCodes.Status403Forbidden);
-        await _runStore.DidNotReceive().CreateAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _runStore.DidNotReceive().CreateAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
+        await _queue.DidNotReceive().EnqueueAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StartAsync_BlankProjectName_ReturnsBadRequestWithoutCreatingARun()
+    {
+        var result = await CreateSut().StartAsync(
+            new StartIndexationRequest(" ", "/data/ciir/ciir.jsonl"), CancellationToken.None);
+
+        var objectResult = result.ShouldBeOfType<ObjectResult>();
+        objectResult.StatusCode.ShouldBe(StatusCodes.Status400BadRequest);
+        await _runStore.DidNotReceive().CreateAsync(Arg.Any<string>(), Arg.Any<long>(), Arg.Any<CancellationToken>());
         await _queue.DidNotReceive().EnqueueAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 
@@ -52,6 +78,7 @@ public sealed class IndexationsControllerTests
     {
         var run = BuildRun(
             IndexingStatus.Completed,
+            projectId: 1,
             new IndexingCounters
             {
                 DocumentsProcessed = 10,
@@ -85,10 +112,18 @@ public sealed class IndexationsControllerTests
         result.ShouldBeOfType<NotFoundResult>();
     }
 
-    private static IndexingRun BuildRun(IndexingStatus status, IndexingCounters? counters = null) => new()
+    private static Project BuildProject() => new()
+    {
+        Id = 1,
+        Name = "MyProject",
+        EmbeddingModel = new EmbeddingModel("bge-m3", 1024),
+    };
+
+    private static IndexingRun BuildRun(IndexingStatus status, long projectId, IndexingCounters? counters = null) => new()
     {
         Id = Guid.NewGuid(),
         Path = "/data/ciir/ciir.jsonl",
+        ProjectId = projectId,
         Status = status,
         StartedAt = DateTimeOffset.UtcNow,
         Counters = counters ?? new IndexingCounters(),
@@ -96,7 +131,7 @@ public sealed class IndexationsControllerTests
 
     private IndexationsController CreateSut()
     {
-        var startIndexation = new StartIndexation(_inputResolver, _runStore, _queue);
+        var startIndexation = new StartIndexation(_inputResolver, _projectStore, _embeddingGenerator, _runStore, _queue);
         return new IndexationsController(startIndexation, _runStore)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },

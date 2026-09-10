@@ -16,10 +16,16 @@ namespace Ciir.Indexer.Application.Ports;
 /// analyzed solution, not the relation's own project) additionally get a symbol match scoped
 /// across every project touched by the run, rather than just the relation's own project -
 /// <c>"project"</c>-origin rows are deliberately left scoped to just their own project, so this
-/// broader search can never change behavior for them. Never touches rows whose CIIR-reported
-/// <c>resolution_status</c> is anything other than <c>resolved</c> -
-/// external/dynamic/ambiguous/unresolved classifications are preserved exactly as CIIR reported
-/// them (spec §46).
+/// broader search can never change behavior for them. Since project identity is now
+/// caller-supplied per <c>POST /api/indexations</c> request rather than derived per CIIR record
+/// (spec's "Atualização — Identidade de projeto informada pelo chamador"), a single run's
+/// <c>allProjectIds</c> is typically just <c>[projectId]</c> - <c>"solution"</c>-origin relations
+/// between CIIR-internal components now usually already share that one project id and get
+/// resolved by the plain same-project pass; the cross-project pass remains correct and only
+/// matters when a caller deliberately imports two different project names that reference each
+/// other. Never touches rows whose CIIR-reported <c>resolution_status</c> is anything other than
+/// <c>resolved</c> - external/dynamic/ambiguous/unresolved classifications are preserved exactly
+/// as CIIR reported them (spec §46).
 /// </summary>
 public interface IRelationResolver
 {

@@ -47,7 +47,9 @@ RAG
 
 A aplicação será uma REST API.
 
-O endpoint principal deverá receber o caminho de um arquivo CIIR JSONL acessível pelo servidor.
+O endpoint principal deverá receber o caminho de um arquivo CIIR JSONL acessível pelo servidor,
+junto com a identidade do projeto ao qual essa importação pertence (ver "Atualização — Identidade
+de projeto informada pelo chamador").
 
 Exemplo conceitual:
 
@@ -58,9 +60,14 @@ Content-Type: application/json
 
 ```json
 {
-  "path": "/data/ciir/ciir.jsonl"
+  "projectName": "MyRepo.Api",
+  "path": "/data/ciir/ciir.jsonl",
+  "gitUrl": "https://github.com/org/myrepo",
+  "gitRawUrl": "https://raw.githubusercontent.com/org/myrepo"
 }
 ```
+
+`projectName` é obrigatório; `gitUrl`/`gitRawUrl` são opcionais.
 
 Resposta:
 
@@ -202,6 +209,10 @@ bounded batches
 
 # 5. Primeira leitura — importação dos documentos
 
+A resolução do projeto acontece uma única vez por execução, ANTES de iniciar a leitura do JSONL —
+a partir do `projectName` informado no request (ver "Atualização — Identidade de projeto informada
+pelo chamador"), não por registro.
+
 O primeiro processo deverá ler o JSONL sequencialmente.
 
 Para cada registro:
@@ -216,9 +227,6 @@ Deserialize
 Validate
    │
    ▼
-Resolve Project
-   │
-   ▼
 Compare existing document
    │
    ├── new ───────────────► generate embedding
@@ -228,7 +236,7 @@ Compare existing document
    └── hash unchanged ────► reuse existing embedding
    │
    ▼
-UPSERT ciir_documents
+UPSERT ciir_documents (project_id já resolvido)
 ```
 
 Nunca carregar todo o JSONL em memória.
@@ -367,11 +375,16 @@ projects
 ----------------------------
 id
 name
+git_url
+git_raw_url
 embedding_model
 embedding_dimensions
 created_at
 updated_at
 ```
+
+`git_url`/`git_raw_url` são opcionais e vêm do request de `POST /api/indexations` (ver "Atualização
+— Identidade de projeto informada pelo chamador").
 
 Exemplo:
 
@@ -435,6 +448,8 @@ projects
 (
     id                    bigint PK,
     name                  text NOT NULL,
+    git_url               text,
+    git_raw_url           text,
     embedding_model       text NOT NULL,
     embedding_dimensions  integer NOT NULL,
     created_at            timestamptz NOT NULL,
@@ -450,15 +465,18 @@ Na v1:
 project.name
 ```
 
-poderá ser considerado a identidade lógica do projeto.
+poderá ser considerado a identidade lógica do projeto — informada pelo chamador de
+`POST /api/indexations`, nunca derivada de um registro CIIR individual (ver "Atualização —
+Identidade de projeto informada pelo chamador").
+
+`git_url`/`git_raw_url` são a primeira extensão prevista abaixo (`repository`/`project_path`), já
+implementada como campos opcionais.
 
 A arquitetura deverá permitir introduzir futuramente:
 
 ```text
-repository
 branch
 commit
-project_path
 project_external_id
 ```
 
@@ -3149,3 +3167,78 @@ docs: document U
 Essa regra já está registrada em `CLAUDE.md` ("## Commits"); esta seção existe para que a spec do
 domínio também deixe explícito que a convenção se aplica a todo o histórico do projeto, não apenas
 como preferência de tooling.
+
+---
+
+# Atualização — Identidade de projeto informada pelo chamador
+
+## O bug
+
+Cada linha do JSONL CIIR carrega seu próprio campo `project`. Até esta atualização,
+`ImportDocuments` e `ImportRelations` resolviam esse campo POR REGISTRO, chamando
+`EnsureProjectAsync(record.project, ...)` — cujo upsert usa `ON CONFLICT (name)`. Consequência:
+dois repositórios git completamente diferentes que, por coincidência, possuem um componente
+interno com o mesmo nome (ex.: um projeto chamado "Api" em cada um) acabavam mesclados na mesma
+linha de `projects` — misturando o contexto de projeto entre repositórios não relacionados.
+
+## A correção
+
+`POST /api/indexations` passa a exigir `projectName` (não vazio) e aceitar opcionalmente
+`gitUrl`/`gitRawUrl` (ver §2/§11). Um único projeto é resolvido UMA ÚNICA VEZ por execução — antes
+mesmo de criar a linha de `indexing_runs` — e TODAS as linhas do JSONL daquela execução, tanto
+documentos quanto relações, são vinculadas a esse projeto.
+
+```text
+POST /api/indexations
+  { projectName, path, gitUrl?, gitRawUrl? }
+        │
+        ▼
+EnsureProjectAsync(projectName, gitUrl, gitRawUrl, embeddingModel)
+        │
+        ▼
+   project.Id
+        │
+        ▼
+criar indexing_run com project_id
+        │
+        ▼
+Document Import e Relation Import usam o MESMO project_id
+para toda linha do arquivo, ignorando o campo "project" de cada registro
+```
+
+O campo `project` de cada registro CIIR continua sendo parseado e validado como presente (o
+contrato CIIR em si não muda, §3) — ele só deixa de ser consultado para fins de identidade de
+projeto no banco.
+
+## Efeito colateral sobre `resolution_origin: "solution"`
+
+A partir do CIIR schemaVersion 1.1, `resolution.origin` distingue `"project"` (alvo no mesmo
+componente CIIR) de `"solution"` (alvo em outro componente CIIR da mesma solução analisada) — ver
+"Atualização — `resolution.origin = "solution"` e resolução entre projetos". Aquela atualização
+existe porque, no modelo antigo, um único arquivo JSONL podia gerar múltiplas linhas em `projects`
+(uma por componente CIIR), então uma relação `"solution"` precisava buscar o documento-alvo em
+outro `project_id`.
+
+Com o modelo atual, uma única execução sempre resolve para um único `project_id` — os componentes
+CIIR internos que antes viravam projetos separados agora convivem sob o mesmo projeto. Relações
+`origin: "solution"` entre eles já compartilham o mesmo `project_id` e são resolvidas pelo passo
+comum de resolução por símbolo (mesmo projeto), sem depender da busca entre projetos. Essa busca
+entre projetos não foi removida — continua correta para o caso, agora mais raro, de alguém importar
+deliberadamente dois `projectName` distintos com relações entre si — mas seu peso prático cai
+bastante.
+
+## Testes obrigatórios
+
+```text
+projectName ausente ou vazio
+    → 400, nenhum indexing_run criado
+
+registros com campo "project" diferente no mesmo arquivo
+    → todos vinculados ao ÚNICO projectId informado no request
+
+reenvio do mesmo projectName com gitUrl diferente
+    → projects.git_url é atualizado (upsert)
+
+dois requests com projectName diferentes, mesmo arquivo
+    → dois projetos distintos, sem mistura de contexto
+```
