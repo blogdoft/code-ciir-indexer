@@ -1,22 +1,20 @@
-# Mirrors this repository to GitHub on every push (all branches and tags, deleting on the
-# GitHub side anything removed here). Requires a Forgejo repo secret configured in
-# Settings > Actions > Secrets:
+# Mirrors this repository to GitHub once a day (all branches and tags, deleting on the
+# GitHub side anything removed here). Runs daily at 20:00 America/Sao_Paulo time (23:00
+# UTC - Brazil has had no DST since 2019) via a cron schedule instead of on every push.
+# Requires a Forgejo repo secret configured in Settings > Actions > Secrets:
 #   MIRROR_GITHUB_TOKEN - a GitHub Personal Access Token (classic, "repo" scope, or
 #   fine-grained with "Contents: read and write") for an account with push access to
 #   https://github.com/blogdoft/code-ciir-indexer.
 name: Mirror to GitHub
 
 on:
-  push:
-    branches: ["**"]
-    tags: ["**"]
+  schedule:
+    - cron: "0 23 * * *"
 
-# A branch push and a tag push landing close together (e.g. tagging a release right after
-# pushing main) each trigger their own run of this job. Without this, two runs can execute
-# concurrently and race on the same working directory's refs - one run's tag fetch fails with
-# "would clobber existing tag" because the other run is fetching/writing refs at the same time.
-# Each run mirrors the full current state of origin regardless of which push triggered it, so
-# it's safe (and more efficient) to drop a still-running, now-stale run in favor of the newest.
+# Guards against overlapping runs (e.g. a manual re-run while the scheduled run is still in
+# progress) racing on the same working directory's refs. Each run mirrors the full current
+# state of origin, so it's safe (and more efficient) to drop a still-running, now-stale run
+# in favor of the newest.
 concurrency:
   group: ${{ github.workflow }}
   cancel-in-progress: true
@@ -44,14 +42,9 @@ jobs:
       # secret value - the same rationale as the `http.extraHeader` auth
       # actions/checkout already uses for the Forgejo origin above.
       #
-      # A branch push and a tag push landing close together can each still
-      # trigger their own run of this workflow despite the concurrency guard
-      # above (Forgejo's own docs: cancellation "cannot be guaranteed" in
-      # exceptional circumstances) - if that happens, both runs race to push
-      # the same refs to GitHub and the slower one is rejected by GitHub's
-      # ref-locking ("cannot lock ref ... is at X but expected Y"). The retry
-      # clears that transient race without masking a genuine push failure,
-      # which fails both attempts identically.
+      # The retry below clears a transient push failure (e.g. a network hiccup or a GitHub
+      # API blip) without masking a genuine push failure, which fails both attempts
+      # identically.
       - name: Push mirror to GitHub
         env:
           MIRROR_GITHUB_TOKEN: ${{ secrets.MIRROR_GITHUB_TOKEN }}
@@ -61,6 +54,6 @@ jobs:
               push --prune https://github.com/blogdoft/code-ciir-indexer.git \
               "+refs/remotes/origin/*:refs/heads/*" \
               "+refs/tags/*:refs/tags/*" && exit 0
-            echo "::warning::push to GitHub mirror failed (attempt $attempt/2) - retrying in case this is a race with an overlapping mirror run for a near-simultaneous branch/tag push"
+            echo "::warning::push to GitHub mirror failed (attempt $attempt/2) - retrying in case this is a transient failure"
           done
           exit 1
