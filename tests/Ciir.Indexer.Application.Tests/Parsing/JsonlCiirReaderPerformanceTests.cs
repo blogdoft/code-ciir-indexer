@@ -7,22 +7,20 @@ using System.Text;
 namespace Ciir.Indexer.Application.Tests.Parsing;
 
 /// <summary>
-/// Spec §61's mandatory benchmark: processing a much larger CIIR file must not cause a
-/// proportionally larger memory footprint - the pipeline stays bounded by streaming, not by file
-/// size (spec §5's requirement to never buffer the entire JSONL file in memory). Measures peak live
-/// heap size (not cumulative allocations - every record is deserialized into objects either way,
-/// streaming or not, so allocation volume alone can't distinguish the two; what differs is whether
-/// prior records are still alive/retained at any given instant). Memory measurements are inherently
-/// approximate (GC timing, background allocations from the test host itself), so this asserts a
-/// generously tolerant bound rather than a tight one: a genuine "loaded the whole file into a
-/// List" regression would show roughly linear (~20x) growth, easily distinguished from the ~1x
-/// (flat) growth true streaming produces, even with several times more slack.
+/// Spec §61's mandatory streaming check. It measures the live memory retained halfway through a
+/// large-file enumeration (spec §5), after a full collection. This avoids comparing process-wide
+/// heap peaks, which include unrelated runtime/test-host allocations and made the prior benchmark
+/// flaky. A regression that loads the file into memory retains tens of MiB at this point; the
+/// streaming reader retains only its current record.
 /// </summary>
 [Trait("Category", "Performance")]
 public sealed class JsonlCiirReaderPerformanceTests : IDisposable
 {
-    private const int SmallFileRecordCount = 2_000;
-    private const int LargeFileRecordCount = 40_000;
+    private const int LargeFileRecordCount = 6_000;
+    private const int RecordPaddingLength = 4 * 1024;
+    private const long MaximumRetainedBytes = 16 * 1024 * 1024;
+
+    private static readonly string RecordPadding = new('x', RecordPaddingLength);
 
     private readonly List<string> _tempFiles = [];
 
@@ -35,42 +33,20 @@ public sealed class JsonlCiirReaderPerformanceTests : IDisposable
     }
 
     [Fact]
-    public async Task ReadAsync_MuchLargerFile_DoesNotProduceProportionallyLargerMemoryGrowth()
+    public async Task ReadAsync_LargeFile_DoesNotRetainPreviouslyReadRecords()
     {
-        var smallFile = GenerateJsonl(SmallFileRecordCount);
         var largeFile = GenerateJsonl(LargeFileRecordCount);
-
-        // Warm up the JIT/type caches on the small file first, outside of any measurement, so the
-        // comparison isn't skewed by one-time startup costs landing in whichever run happens first.
-        await MeasurePeakHeapGrowthAsync(smallFile);
-
-        var smallGrowth = await MeasurePeakHeapGrowthAsync(smallFile);
-        var largeGrowth = await MeasurePeakHeapGrowthAsync(largeFile);
-
-        largeGrowth.ShouldBeLessThan(Math.Max(smallGrowth, 1) * 4);
-    }
-
-    private static async Task<long> MeasurePeakHeapGrowthAsync(string path)
-    {
         var baseline = ForceCollectionAndGetHeapSize();
-        var peak = baseline;
 
         var reader = new JsonlCiirReader();
-        var count = 0;
-        await foreach (var unused in reader.ReadAsync(path))
+        await using var enumerator = reader.ReadAsync(largeFile).GetAsyncEnumerator();
+        for (var count = 0; count < LargeFileRecordCount / 2; count++)
         {
-            count++;
-            if (count % 500 == 0)
-            {
-                var current = GC.GetTotalMemory(forceFullCollection: false);
-                if (current > peak)
-                {
-                    peak = current;
-                }
-            }
+            (await enumerator.MoveNextAsync()).ShouldBeTrue();
         }
 
-        return Math.Max(0, peak - baseline);
+        var retainedBytes = Math.Max(0, ForceCollectionAndGetHeapSize() - baseline);
+        retainedBytes.ShouldBeLessThan(MaximumRetainedBytes);
     }
 
     // Isolated in its own method, with justification, per the project's suppression policy - this
@@ -91,10 +67,11 @@ public sealed class JsonlCiirReaderPerformanceTests : IDisposable
     {
         var indexText = index.ToString(CultureInfo.InvariantCulture);
         return """
-            {"schemaVersion":"1.0","id":"<CIIR_ID>","kind":"method","language":"csharp","project":"PerfProject","symbol":{"name":"Method<I>","qualifiedName":"NS.Type.Method<I>","canonicalName":"NS.Type.Method<I>()"}}
+            {"schemaVersion":"1.0","id":"<CIIR_ID>","kind":"method","language":"csharp","project":"PerfProject","symbol":{"name":"Method<I>","qualifiedName":"NS.Type.Method<I>","canonicalName":"NS.Type.Method<I>()"},"padding":"<PADDING>"}
             """
             .Replace("<CIIR_ID>", Sha256Of($"method-{indexText}"))
-            .Replace("<I>", indexText);
+            .Replace("<I>", indexText)
+            .Replace("<PADDING>", RecordPadding);
     }
 
     private static string Sha256Of(string seed)
