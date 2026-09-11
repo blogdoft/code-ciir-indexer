@@ -1,6 +1,10 @@
+# Keeps the Compose project (and therefore existing named volumes) stable after moving this
+# file out of the repository root.
+name: code-ciir-indexer
+
 # Development-only PostgreSQL + pgvector for the CIIR Indexer.
-# Start:  docker compose up -d
-# Stop:   docker compose down          (add -v to also drop the data volume)
+# Start:  docker compose -f .eng/docker/docker-compose.yml up -d
+# Stop:   docker compose -f .eng/docker/docker-compose.yml down          (add -v to also drop the data volume)
 #
 # Matches the default appsettings.json:
 #   Host=localhost;Port=5432;Database=ciir_indexer;Username=postgres;Password=postgres
@@ -25,7 +29,7 @@ services:
 
   # Optional: a local Ollama server, for exercising the Ollama embedding provider without any
   # cloud dependency. Disabled by default - start it explicitly with:
-  #   docker compose --profile ollama up -d
+  #   docker compose -f .eng/docker/docker-compose.yml --profile ollama up -d
   # Pull a model once the container is up, e.g.: docker exec ciir-indexer-ollama ollama pull bge-m3
   ollama:
     image: ollama/ollama:latest

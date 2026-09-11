@@ -8,8 +8,11 @@
 name: Mirror to GitHub
 
 on:
+  # Do not restrict branches or tags: the mirror must reflect every ref.
+  push:
   schedule:
-    - cron: "0 23 * * *"
+    - cron: "0 20 * * *"
+      timezone: America/Sao_Paulo
 
 # Guards against overlapping runs (e.g. a manual re-run while the scheduled run is still in
 # progress) racing on the same working directory's refs. Each run mirrors the full current
@@ -23,6 +26,24 @@ jobs:
   mirror:
     runs-on: ubuntu
     steps:
+      # There is no time-of-day predicate among Forgejo's workflow expressions. Decide
+      # it on the runner, then skip the expensive checkout/fetch/push steps for daytime
+      # push events. A scheduled invocation always mirrors the accumulated daytime work.
+      - name: Decide whether this run is in the mirroring window
+        id: window
+        run: |
+          if [ "$FORGEJO_EVENT_NAME" = "schedule" ]; then
+            mirror=true
+          else
+            hour=$(TZ=America/Sao_Paulo date +%H)
+            case "$hour" in
+              20|21|22|23|00|01|02|03|04|05|06) mirror=true ;;
+              *) mirror=false ;;
+            esac
+          fi
+          echo "mirror=$mirror" >> "$FORGEJO_OUTPUT"
+          echo "Mirror enabled: $mirror"
+
       - name: Checkout
         uses: actions/checkout@v4
         with:

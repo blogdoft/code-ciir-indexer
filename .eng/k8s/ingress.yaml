@@ -1,0 +1,23 @@
+# ingressClassName/host are guesses (Traefik is k3s' default, host follows the
+# forgejo.home.arpa/code-rag-api.home.arpa naming convention) - adjust to match your cluster's
+# actual ingress controller and desired hostname before applying.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: code-ciir-indexer
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: code-ciir-indexer.home.arpa
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: code-ciir-indexer
+                port:
+                  name: http

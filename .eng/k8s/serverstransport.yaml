@@ -1,0 +1,11 @@
+# Mirrors code-rag-api's own code-rag-api-transport (same reasoning: real Ollama reranking on
+# CPU, no GPU, can take up to ~90s+ under load - 90s wasn't enough margin there, hence 120s).
+# Referenced from service.yaml via the traefik.ingress.kubernetes.io/service.serverstransport
+# annotation. See .specs/10-reranking.md.
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: code-ciir-indexer-transport
+spec:
+  forwardingTimeouts:
+    responseHeaderTimeout: 120s

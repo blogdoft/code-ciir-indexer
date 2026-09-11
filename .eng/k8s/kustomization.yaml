@@ -1,0 +1,18 @@
+# This directory is not applied directly - docker-publish.yml stamps the real image
+# name/tag onto it (kustomize edit set image) and copies the result into
+# manifests/code-ciir-indexer/ in the argo-local-apps GitOps repo on every push. ArgoCD then
+# renders it with kustomize from there.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - configmap.yaml
+  - ingress.yaml
+  - serverstransport.yaml
+
+images:
+  - name: code-ciir-indexer
+    newName: REGISTRY_PLACEHOLDER/code-ciir-indexer
+    newTag: unset

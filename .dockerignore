@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+.git/
+.eng/
+.forgejo/
+[Tt]est[Rr]esult*/
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.DotSettings.user
+.DS_Store
+Thumbs.db

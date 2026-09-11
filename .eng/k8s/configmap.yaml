@@ -1,0 +1,31 @@
+# Non-secret settings only - see src/CodeCiir.Api/appsettings.json for defaults.
+# ConnectionStrings__Database is injected separately from the code-ciir-secrets Secret
+# (see deployment.yaml) - read-only credentials, since this API never writes to code3rag
+# except the additive code_query_feedback table (see .specs/06-code-query-feedback.md).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: code-ciir-indexer-config
+data:
+  ASPNETCORE_URLS: "http://+:8080"
+  ASPNETCORE_ENVIRONMENT: "Development"
+  # Same shared Ollama instance code-rag-api already uses for embeddings. Model/Dimensions are
+  # set here (not per-project): ciir_documents.embedding has one fixed vector width for the
+  # whole code3rag installation, so every code-queries question is embedded with this single
+  # app-wide model - see .specs/09-code-queries-filters.md.
+  Embeddings__Provider: "Ollama"
+  Embeddings__BaseUrl: "http://192.168.1.212:11434"
+  Embeddings__TimeoutSeconds: "30"
+  Embeddings__Model: "bge-m3"
+  Embeddings__Dimensions: "1024"
+  # Reranking of vector-search candidates, on by default in this cluster - same shared Ollama
+  # instance/model code-rag-api already uses for reranking (qwen2.5:7b-instruct, an
+  # instruct/chat model - NOT bge-m3, which is embeddings-only and can't be used here). See
+  # .specs/10-reranking.md. This is why code-ciir-indexer-transport (serverstransport.yaml) exists:
+  # Ollama reranking on CPU (no GPU) can take up to ~90s+ under load.
+  Reranking__Provider: "Ollama"
+  Reranking__Model: "qwen2.5:7b-instruct"
+  Reranking__BaseUrl: "http://192.168.1.212:11434"
+  Reranking__TimeoutSeconds: "120"
+  Reranking__CandidatePoolSize: "25"
+  Reranking__MaxConcurrency: "6"

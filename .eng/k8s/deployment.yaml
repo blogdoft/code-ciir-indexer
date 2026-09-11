@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: code-ciir-indexer
+  labels:
+    app: code-ciir-indexer
+spec:
+  replicas: 1
+  # Kubernetes defaults to keeping 10 old, scaled-to-zero ReplicaSets around for rollback
+  # history. With CI redeploying on every push, that piles up fast for no real benefit here -
+  # argo-local-apps' git history already covers rollback. Keep just one.
+  revisionHistoryLimit: 1
+  selector:
+    matchLabels:
+      app: code-ciir-indexer
+  template:
+    metadata:
+      labels:
+        app: code-ciir-indexer
+    spec:
+      containers:
+        - name: code-ciir-indexer
+          # image name/tag is stamped by the docker-publish.yml workflow (kustomize edit set
+          # image) before this directory is synced to argo-local-apps - the value here is
+          # never actually deployed as-is.
+          image: code-ciir-indexer
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: code-ciir-indexer-config
+          env:
+            # code-ciir-secrets is not managed in this repo - create it once in the target
+            # namespace/cluster with a "connection-string" key holding the Npgsql connection
+            # string for code3rag. Deliberately a SEPARATE secret from code-rag-secrets, even
+            # though it points at the same Postgres host, to keep the two services' credentials
+            # independent - see .specs/08-ops-deployment.md.
+            - name: ConnectionStrings__Database
+              valueFrom:
+                secretKeyRef:
+                  name: code-ciir-secrets
+                  key: connection-string
+          readinessProbe:
+            # Touches the database (ProjectsRepository) - a meaningful readiness signal beyond
+            # "the process is up", since every real endpoint needs code3rag reachable.
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi

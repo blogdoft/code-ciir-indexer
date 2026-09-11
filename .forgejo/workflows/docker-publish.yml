@@ -1,0 +1,160 @@
+# Assumes a self-hosted act_runner labeled "docker" with access to a Docker daemon (either
+# privileged mode or a mounted docker socket) - adjust `runs-on` and the registry variables
+# below (Settings > Actions > Variables/Secrets) to match your Forgejo instance. Mirrors
+# code-rag-api's own workflow (sauron/code-rag-api, .forgejo/workflows/docker-publish.yml),
+# adapted for this repo's net10.0/code-ciir-indexer.slnx and lack of a Reranking/OpenTelemetry stack.
+
+name: Build, test and publish Docker image
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
+
+# Build/publish/deploy only fires for a vX.Y.Z tag push - a plain main push only runs the test
+# job (below, via the pull_request trigger for PRs). Runs are queued (not cancelled) since each
+# produces a distinct, meaningful image version.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: self-hosted
+    container:
+      image: mcr.microsoft.com/dotnet/sdk:10.0
+    outputs:
+      semver: ${{ steps.gitversion.outputs.semver }}
+    steps:
+      # actions/checkout is a Node action; the dotnet SDK image doesn't ship Node, and the
+      # Forgejo runner doesn't inject one into custom job containers.
+      - name: Install Node.js
+        run: apt-get update && apt-get install -y --no-install-recommends nodejs
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # GitVersion needs the full commit history and tags to compute a SemVer.
+          fetch-depth: 0
+
+      - name: Compute version (GitVersion)
+        id: gitversion
+        run: |
+          dotnet tool restore
+          dotnet tool run dotnet-gitversion /showvariable SemVer | tee /tmp/semver.txt
+          echo "semver=$(cat /tmp/semver.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: dotnet restore code-ciir-indexer.slnx
+
+      - name: Build
+        run: dotnet build code-ciir-indexer.slnx --no-restore --configuration Release
+
+      # -m:1 forces MSBuild to run test projects one at a time: CodeCiir.Api.Tests and
+      # CodeCiir.Infrastructure.Database.Tests each spin up a real Postgres/pgvector container
+      # via Testcontainers - running them in parallel on a shared Docker daemon overloads it
+      # while those images pull. The retry is a safety net for transient Testcontainers/Docker
+      # contention (e.g. two overlapping workflow runs), not for masking a genuine regression -
+      # a real test failure fails both attempts identically.
+      - name: Test
+        run: |
+          for attempt in 1 2; do
+            dotnet test code-ciir-indexer.slnx --no-build --configuration Release -m:1 && exit 0
+            echo "::warning::dotnet test failed (attempt $attempt/2) - retrying in case this is Testcontainers/Docker-daemon contention from an overlapping workflow run"
+          done
+          exit 1
+
+  publish:
+    needs: test
+    if: github.event_name == 'push'
+    runs-on: self-hosted
+    env:
+      VERSION: ${{ needs.test.outputs.semver }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # REGISTRY_IMAGE, REGISTRY_USERNAME are repo/org variables; REGISTRY_PASSWORD is a repo
+      # secret (a token with package-write scope for this Forgejo instance's registry).
+      - name: Log in to the container registry
+        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login "${{ vars.REGISTRY }}" -u "${{ vars.REGISTRY_USERNAME }}" --password-stdin
+
+      - name: Determine image tags
+        id: tag
+        run: |
+          tags="${{ vars.REGISTRY }}/${{ vars.REGISTRY_IMAGE }}:${VERSION} ${{ vars.REGISTRY }}/${{ vars.REGISTRY_IMAGE }}:latest"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "deploy_tag=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        run: |
+          build_args=()
+          for t in ${{ steps.tag.outputs.tags }}; do build_args+=(-t "$t"); done
+          docker build --build-arg VERSION="${VERSION}" "${build_args[@]}" -f .eng/docker/Dockerfile .
+
+      - name: Push image
+        run: |
+          for t in ${{ steps.tag.outputs.tags }}; do docker push "$t"; done
+
+    outputs:
+      deploy_tag: ${{ steps.tag.outputs.deploy_tag }}
+
+  update-gitops:
+    needs: publish
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kustomize
+        env:
+          GITHUB_TOKEN: ""
+        run: |
+          if [ ! -x /tmp/kustomize-bin/kustomize ]; then
+            mkdir -p /tmp/kustomize-bin
+            curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s -- /tmp/kustomize-bin
+          fi
+          echo "/tmp/kustomize-bin" >> "$GITHUB_PATH"
+
+      - name: Stamp image into manifests
+        run: |
+          cd .eng/k8s
+          kustomize edit set image "code-ciir-api=${{ vars.REGISTRY }}/${{ vars.REGISTRY_IMAGE }}:${{ needs.publish.outputs.deploy_tag }}"
+
+      - name: Install openssh-client
+        run: apk add --no-cache openssh-client
+
+      # ARGO_DEPLOY_SSH_KEY is a repo secret: the private half of a deploy key with write
+      # access added to sauron/argo-local-apps in Forgejo (Settings > Deploy keys, "Read and
+      # Write" enabled) - generate a dedicated one for this repo, don't reuse code-rag-api's.
+      - name: Configure SSH
+        run: |
+          echo "${{ secrets.ARGO_DEPLOY_SSH_KEY }}" > "${{ github.workspace }}/.ssh-key"
+          chmod 600 "${{ github.workspace }}/.ssh-key"
+          ssh-keyscan -p 2222 forgejo.home.arpa > "${{ github.workspace }}/.ssh-known-hosts" 2>/dev/null
+
+      - name: Sync manifests to argo-local-apps
+        env:
+          GIT_SSH_COMMAND: ssh -i ${{ github.workspace }}/.ssh-key -o UserKnownHostsFile=${{ github.workspace }}/.ssh-known-hosts
+        run: |
+          WORKDIR=$(mktemp -d)
+          git clone --depth 1 ssh://git@forgejo.home.arpa:2222/sauron/argo-local-apps.git "$WORKDIR"
+
+          rm -rf "$WORKDIR/manifests/code-ciir-api"
+          mkdir -p "$WORKDIR/manifests/code-ciir-api"
+          cp -r .eng/k8s/. "$WORKDIR/manifests/code-ciir-api/"
+
+          cd "$WORKDIR"
+          git config user.name "code-ciir-ci"
+          git config user.email "ci@code-ciir.local"
+          git add manifests/code-ciir-api
+
+          if git diff --cached --quiet; then
+            echo "No manifest changes, skipping commit."
+          else
+            git commit -m "chore(code-ciir): deploy ${{ needs.publish.outputs.deploy_tag }}"
+            git push origin main
+          fi
+
+      - name: Clean up SSH key
+        if: always()
+        run: rm -f "${{ github.workspace }}/.ssh-key" "${{ github.workspace }}/.ssh-known-hosts"
