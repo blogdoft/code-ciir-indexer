@@ -20,6 +20,7 @@ builder.Logging.AddJsonConsole();
 try
 {
     builder.Services.AddControllers();
+    builder.Services.AddHealthChecks();
     builder.Services.AddOpenApi(options =>
     {
         options.AddDocumentTransformer<ApiInfoDocumentTransformer>();
@@ -76,8 +77,8 @@ try
         app.MapScalarApiReference();
     }
 
-    app.UseHttpsRedirection();
     app.UseAuthorization();
+    app.MapHealthChecks("/health").ExcludeFromDescription();
     app.MapControllers();
 
     await app.RunAsync();
