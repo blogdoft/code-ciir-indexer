@@ -27,4 +27,13 @@ public interface IProjectStore
         string? gitRawUrl,
         EmbeddingModel embeddingModel,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Looks up an already-registered project by id (upload spec §3/§9) - unlike
+    /// <see cref="EnsureProjectAsync"/>, this never creates or updates anything.
+    /// </summary>
+    /// <param name="id">The project id to look up.</param>
+    /// <param name="cancellationToken">Propagates request cancellation.</param>
+    /// <returns>The project, or <c>null</c> if no project with this id exists.</returns>
+    Task<Project?> GetByIdAsync(long id, CancellationToken cancellationToken = default);
 }

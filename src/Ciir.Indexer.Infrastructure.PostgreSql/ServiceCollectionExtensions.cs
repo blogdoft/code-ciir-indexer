@@ -35,6 +35,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICiirDocumentWriter, CiirDocumentWriter>();
         services.AddSingleton<ICiirRelationWriter, CiirRelationWriter>();
         services.AddSingleton<IIndexingRunStore, IndexingRunStore>();
+        services.AddSingleton<ICiirUploadStore, CiirUploadStore>();
         services.AddSingleton<IRelationResolver, RelationResolver>();
         services.AddSingleton<IRelationIdentityKeyGenerator, RelationIdentityKeyGenerator>();
 

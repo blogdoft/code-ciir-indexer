@@ -11,6 +11,7 @@
     <ProjectReference Include="..\Ciir.Indexer.Infrastructure.Embeddings.Abstractions\Ciir.Indexer.Infrastructure.Embeddings.Abstractions.csproj" />
     <ProjectReference Include="..\Ciir.Indexer.Infrastructure.Embeddings.Ollama\Ciir.Indexer.Infrastructure.Embeddings.Ollama.csproj" />
     <ProjectReference Include="..\Ciir.Indexer.Infrastructure.Embeddings.OpenAI\Ciir.Indexer.Infrastructure.Embeddings.OpenAI.csproj" />
+    <ProjectReference Include="..\Ciir.Indexer.Infrastructure.ObjectStorage.Minio\Ciir.Indexer.Infrastructure.ObjectStorage.Minio.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

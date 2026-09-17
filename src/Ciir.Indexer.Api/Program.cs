@@ -1,13 +1,18 @@
+using Ciir.Indexer.Api.Controllers;
 using Ciir.Indexer.Api.Indexation;
 using Ciir.Indexer.Api.Input;
 using Ciir.Indexer.Api.OpenApi;
+using Ciir.Indexer.Api.Uploads;
 using Ciir.Indexer.Application;
 using Ciir.Indexer.Application.Ports;
+using Ciir.Indexer.Application.UseCases;
 using Ciir.Indexer.Infrastructure.Embeddings.Abstractions;
 using Ciir.Indexer.Infrastructure.Embeddings.Ollama;
 using Ciir.Indexer.Infrastructure.Embeddings.OpenAI;
+using Ciir.Indexer.Infrastructure.ObjectStorage.Minio;
 using Ciir.Indexer.Infrastructure.PostgreSql;
 using Ciir.Indexer.Infrastructure.PostgreSql.Migrations;
+using Microsoft.AspNetCore.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -45,6 +50,23 @@ try
     builder.Services.AddPostgreSqlPersistence(
         connectionString, new IndexerDatabaseOptions { EmbeddingDimensions = embeddingOptions.Dimensions });
 
+    // --- MinIO object storage for CIIR uploads (upload spec §5/§10/§11). ---
+    var minioOptions = builder.Configuration.GetSection(MinioOptions.SectionName).Get<MinioOptions>()
+        ?? throw new InvalidOperationException($"Missing required configuration section '{MinioOptions.SectionName}'.");
+    builder.Services.AddMinioObjectStorage(minioOptions);
+
+    var uploadOptions = builder.Configuration.GetSection(UploadOptions.SectionName).Get<UploadOptions>() ?? new UploadOptions();
+    builder.Services.AddSingleton(uploadOptions);
+    builder.Services.AddRateLimiter(options =>
+    {
+        options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+        options.AddConcurrencyLimiter(CiirUploadsController.RateLimiterPolicyName, limiterOptions =>
+        {
+            limiterOptions.PermitLimit = uploadOptions.MaxConcurrentUploads;
+            limiterOptions.QueueLimit = 0;
+        });
+    });
+
     // --- Path validation (spec §42) and the Application use-case layer. ---
     var pathOptions = builder.Configuration.GetSection(IndexerPathOptions.SectionName).Get<IndexerPathOptions>()
         ?? throw new InvalidOperationException($"Missing required configuration section '{IndexerPathOptions.SectionName}'.");
@@ -60,10 +82,33 @@ try
     builder.Services.AddSingleton<IIndexationQueue>(sp => sp.GetRequiredService<IndexationChannel>());
     builder.Services.AddHostedService<IndexationWorker>();
 
+    // --- CIIR uploads (upload spec §4/§8): the bucket name is read from the "Minio" section here,
+    // in the composition root, rather than threaded through the Application layer, which must not
+    // depend on an infrastructure-specific options type. ---
+    builder.Services.AddSingleton(sp => new SubmitCiirUpload(
+        sp.GetRequiredService<IProjectStore>(),
+        sp.GetRequiredService<IObjectStorage>(),
+        sp.GetRequiredService<ICiirUploadStore>(),
+        minioOptions.BucketName,
+        uploadOptions));
+    builder.Services.AddSingleton(sp => new ProcessNextCiirUpload(
+        sp.GetRequiredService<ICiirUploadStore>(),
+        sp.GetRequiredService<IObjectStorage>(),
+        sp.GetRequiredService<IProjectStore>(),
+        sp.GetRequiredService<IIndexingRunStore>(),
+        sp.GetRequiredService<IEmbeddingGenerator>(),
+        sp.GetRequiredService<RunIndexation>(),
+        uploadOptions,
+        sp.GetRequiredService<ILogger<ProcessNextCiirUpload>>()));
+    builder.Services.AddHostedService<CiirUploadWorker>();
+
     var app = builder.Build();
 
     // Fail fast on invalid embedding configuration rather than waiting for the first request.
     app.Services.GetRequiredService<IEmbeddingGenerator>();
+
+    // Fail fast on an unreachable/misconfigured MinIO bucket rather than on the first upload.
+    await app.Services.GetRequiredService<IObjectStorage>().EnsureBucketExistsAsync(minioOptions.BucketName);
 
     using (var migrationScope = app.Services.CreateScope())
     {
@@ -80,6 +125,7 @@ try
         });
     }
 
+    app.UseRateLimiter();
     app.UseAuthorization();
     app.MapHealthChecks("/health").ExcludeFromDescription();
     app.MapControllers();

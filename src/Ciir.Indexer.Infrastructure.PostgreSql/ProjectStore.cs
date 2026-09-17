@@ -22,11 +22,28 @@ public sealed class ProjectStore : IProjectStore
             embedding_model AS "EmbeddingModel", embedding_dimensions AS "EmbeddingDimensions";
         """;
 
+    private const string GetByIdSql =
+        """
+        SELECT id AS "Id", name AS "Name", git_url AS "GitUrl", git_raw_url AS "GitRawUrl",
+            embedding_model AS "EmbeddingModel", embedding_dimensions AS "EmbeddingDimensions"
+        FROM projects WHERE id = @Id;
+        """;
+
     private readonly NpgsqlDataSource _dataSource;
 
     public ProjectStore(NpgsqlDataSource dataSource)
     {
         _dataSource = dataSource;
+    }
+
+    public async Task<Project?> GetByIdAsync(long id, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
+
+        var row = await PostgreSqlConnections.ExecuteAsync(() => connection.QuerySingleOrDefaultAsync<ProjectRow?>(
+            new CommandDefinition(GetByIdSql, new { Id = id }, cancellationToken: cancellationToken)));
+
+        return row?.ToDomain();
     }
 
     public async Task<Project> EnsureProjectAsync(
@@ -51,16 +68,19 @@ public sealed class ProjectStore : IProjectStore
                 },
                 cancellationToken: cancellationToken)));
 
-        return new Project
-        {
-            Id = row.Id,
-            Name = row.Name,
-            GitUrl = row.GitUrl,
-            GitRawUrl = row.GitRawUrl,
-            EmbeddingModel = new EmbeddingModel(row.EmbeddingModel, row.EmbeddingDimensions),
-        };
+        return row.ToDomain();
     }
 
     private sealed record ProjectRow(
-        long Id, string Name, string? GitUrl, string? GitRawUrl, string EmbeddingModel, int EmbeddingDimensions);
+        long Id, string Name, string? GitUrl, string? GitRawUrl, string EmbeddingModel, int EmbeddingDimensions)
+    {
+        public Project ToDomain() => new()
+        {
+            Id = Id,
+            Name = Name,
+            GitUrl = GitUrl,
+            GitRawUrl = GitRawUrl,
+            EmbeddingModel = new EmbeddingModel(EmbeddingModel, EmbeddingDimensions),
+        };
+    }
 }

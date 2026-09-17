@@ -29,3 +29,11 @@ data:
   Reranking__TimeoutSeconds: "120"
   Reranking__CandidatePoolSize: "25"
   Reranking__MaxConcurrency: "6"
+  # CIIR upload endpoint (POST /api/ciir-uploads, upload spec §5/§10) - object storage for
+  # uploaded CIIR files pending indexation. Endpoint uses the in-cluster Service DNS (this app
+  # runs inside the cluster) rather than the minio-api.home.arpa Ingress used for external/local
+  # access. AccessKey/SecretKey come from code-ciir-minio-secrets (see deployment.yaml) - a
+  # least-privilege user scoped only to the "ciir-uploads" bucket, not the MinIO root user.
+  Minio__Endpoint: "minio.minio.svc.cluster.local:9000"
+  Minio__UseSsl: "false"
+  Minio__BucketName: "ciir-uploads"
