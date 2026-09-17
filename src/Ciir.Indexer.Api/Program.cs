@@ -8,7 +8,6 @@ using Ciir.Indexer.Infrastructure.Embeddings.Ollama;
 using Ciir.Indexer.Infrastructure.Embeddings.OpenAI;
 using Ciir.Indexer.Infrastructure.PostgreSql;
 using Ciir.Indexer.Infrastructure.PostgreSql.Migrations;
-using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -74,7 +73,11 @@ try
     if (app.Environment.IsDevelopment())
     {
         app.MapOpenApi();
-        app.MapScalarApiReference();
+        app.UseSwaggerUI(options =>
+        {
+            options.SwaggerEndpoint("/openapi/v1.json", "CIIR Indexer API");
+            options.RoutePrefix = "swagger";
+        });
     }
 
     app.UseAuthorization();
