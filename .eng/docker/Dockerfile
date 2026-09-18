@@ -15,6 +15,7 @@ COPY src/Ciir.Indexer.Core/Ciir.Indexer.Core.csproj src/Ciir.Indexer.Core/
 COPY src/Ciir.Indexer.Infrastructure.Embeddings.Abstractions/Ciir.Indexer.Infrastructure.Embeddings.Abstractions.csproj src/Ciir.Indexer.Infrastructure.Embeddings.Abstractions/
 COPY src/Ciir.Indexer.Infrastructure.Embeddings.Ollama/Ciir.Indexer.Infrastructure.Embeddings.Ollama.csproj src/Ciir.Indexer.Infrastructure.Embeddings.Ollama/
 COPY src/Ciir.Indexer.Infrastructure.Embeddings.OpenAI/Ciir.Indexer.Infrastructure.Embeddings.OpenAI.csproj src/Ciir.Indexer.Infrastructure.Embeddings.OpenAI/
+COPY src/Ciir.Indexer.Infrastructure.ObjectStorage.Minio/Ciir.Indexer.Infrastructure.ObjectStorage.Minio.csproj src/Ciir.Indexer.Infrastructure.ObjectStorage.Minio/
 COPY src/Ciir.Indexer.Infrastructure.PostgreSql/Ciir.Indexer.Infrastructure.PostgreSql.csproj src/Ciir.Indexer.Infrastructure.PostgreSql/
 
 RUN dotnet restore src/Ciir.Indexer.Api/Ciir.Indexer.Api.csproj
