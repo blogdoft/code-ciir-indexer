@@ -36,6 +36,7 @@ try
         options.AddDocumentTransformer<ApiInfoDocumentTransformer>();
         options.AddDocumentTransformer<ControllerTagDescriptionsDocumentTransformer>();
         options.AddDocumentTransformer<PublicServerDocumentTransformer>();
+        options.AddOperationTransformer<CiirUploadRequestBodyOperationTransformer>();
     });
 
     // --- Embeddings: register every provider module, then resolve the one configured provider once
