@@ -6,6 +6,7 @@ ARG VERSION=0.0.0
 ENV HUSKY=0
 WORKDIR /src
 
+COPY .editorconfig .editorconfig
 COPY Directory.Build.props stylecop.json ./
 COPY code-ciir-indexer.slnx ./
 COPY src/Ciir.Indexer.Api/Ciir.Indexer.Api.csproj src/Ciir.Indexer.Api/
