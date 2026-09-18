@@ -6,6 +6,7 @@
     <Project Path="src/Ciir.Indexer.Infrastructure.Embeddings.Abstractions/Ciir.Indexer.Infrastructure.Embeddings.Abstractions.csproj" />
     <Project Path="src/Ciir.Indexer.Infrastructure.Embeddings.Ollama/Ciir.Indexer.Infrastructure.Embeddings.Ollama.csproj" />
     <Project Path="src/Ciir.Indexer.Infrastructure.Embeddings.OpenAI/Ciir.Indexer.Infrastructure.Embeddings.OpenAI.csproj" />
+    <Project Path="src/Ciir.Indexer.Infrastructure.ObjectStorage.Minio/Ciir.Indexer.Infrastructure.ObjectStorage.Minio.csproj" />
     <Project Path="src/Ciir.Indexer.Infrastructure.PostgreSql/Ciir.Indexer.Infrastructure.PostgreSql.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -13,6 +14,7 @@
     <Project Path="tests/Ciir.Indexer.Application.Tests/Ciir.Indexer.Application.Tests.csproj" />
     <Project Path="tests/Ciir.Indexer.Core.Tests/Ciir.Indexer.Core.Tests.csproj" />
     <Project Path="tests/Ciir.Indexer.Infrastructure.Embeddings.Tests/Ciir.Indexer.Infrastructure.Embeddings.Tests.csproj" />
+    <Project Path="tests/Ciir.Indexer.Infrastructure.ObjectStorage.Minio.Tests/Ciir.Indexer.Infrastructure.ObjectStorage.Minio.Tests.csproj" />
     <Project Path="tests/Ciir.Indexer.Infrastructure.PostgreSql.Tests/Ciir.Indexer.Infrastructure.PostgreSql.Tests.csproj" />
   </Folder>
 </Solution>

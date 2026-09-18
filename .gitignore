@@ -17,3 +17,7 @@ obj/
 ## OS
 .DS_Store
 Thumbs.db
+
+## Real credentials, not applied to the cluster yet - see README.md
+.eng/k8s/code-ciir-minio-secrets.yaml
+.eng/k8s/ciir-minio-bootstrap-job.yaml

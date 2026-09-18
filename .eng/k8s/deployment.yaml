@@ -42,6 +42,21 @@ spec:
                 secretKeyRef:
                   name: code-ciir-secrets
                   key: connection-string
+            # code-ciir-minio-secrets is not managed in this repo either - see
+            # .eng/k8s/code-ciir-minio-secrets.yaml (not applied) for the exact Secret shape and
+            # README.md for how the least-privilege "ciir-indexer-uploader" MinIO user/policy
+            # this holds credentials for was created. A separate Secret from code-ciir-secrets,
+            # same reasoning: independent credentials per backing service.
+            - name: Minio__AccessKey
+              valueFrom:
+                secretKeyRef:
+                  name: code-ciir-minio-secrets
+                  key: access-key
+            - name: Minio__SecretKey
+              valueFrom:
+                secretKeyRef:
+                  name: code-ciir-minio-secrets
+                  key: secret-key
           readinessProbe:
             # Touches the database (ProjectsRepository) - a meaningful readiness signal beyond
             # "the process is up", since every real endpoint needs code3rag reachable.

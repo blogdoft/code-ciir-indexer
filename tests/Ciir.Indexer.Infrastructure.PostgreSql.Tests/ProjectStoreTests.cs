@@ -77,4 +77,28 @@ public sealed class ProjectStoreTests
         updated.GitUrl.ShouldBe("https://git.example/new");
         updated.GitRawUrl.ShouldBe("https://raw.example/new");
     }
+
+    [Fact]
+    public async Task GetByIdAsync_ExistingProject_ReturnsIt()
+    {
+        var name = TestData.NewProjectName();
+        var created = await _sut.EnsureProjectAsync(
+            name, "https://git.example/repo", "https://raw.example/repo", new EmbeddingModel("bge-m3", 1024));
+
+        var found = await _sut.GetByIdAsync(created.Id);
+
+        found.ShouldNotBeNull();
+        found.Id.ShouldBe(created.Id);
+        found.Name.ShouldBe(name);
+        found.GitUrl.ShouldBe("https://git.example/repo");
+        found.GitRawUrl.ShouldBe("https://raw.example/repo");
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_UnknownId_ReturnsNull()
+    {
+        var found = await _sut.GetByIdAsync(-1);
+
+        found.ShouldBeNull();
+    }
 }
