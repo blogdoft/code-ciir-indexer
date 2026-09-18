@@ -58,11 +58,38 @@ public sealed class MinioObjectStorage : IObjectStorage
         ExecuteAsync(() => _client.RemoveObjectAsync(
             new RemoveObjectArgs().WithBucket(bucket).WithObject(objectKey), cancellationToken));
 
+    public Task<bool> ExistsAsync(string bucket, string objectKey, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(async () =>
+        {
+            try
+            {
+                await _client.StatObjectAsync(
+                    new StatObjectArgs().WithBucket(bucket).WithObject(objectKey), cancellationToken);
+                return true;
+            }
+            catch (ObjectNotFoundException)
+            {
+                return false;
+            }
+        });
+
     private static async Task ExecuteAsync(Func<Task> action)
     {
         try
         {
             await action();
+        }
+        catch (Exception ex) when (ex is MinioException or HttpRequestException)
+        {
+            throw new ObjectStorageUnavailableException($"MinIO operation failed: {ex.Message}", ex);
+        }
+    }
+
+    private static async Task<T> ExecuteAsync<T>(Func<Task<T>> action)
+    {
+        try
+        {
+            return await action();
         }
         catch (Exception ex) when (ex is MinioException or HttpRequestException)
         {

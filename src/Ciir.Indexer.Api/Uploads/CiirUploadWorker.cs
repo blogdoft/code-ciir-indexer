@@ -7,9 +7,9 @@ namespace Ciir.Indexer.Api.Uploads;
 /// Polls the durable <c>ciir_uploads</c> queue for the lifetime of the host (upload spec §8): each
 /// cycle processes at most one upload via <see cref="ProcessNextCiirUpload"/>, retrying immediately
 /// while there is a backlog and waiting <see cref="UploadOptions.PollingIntervalSeconds"/> once
-/// there is nothing eligible. Deliberately independent of <see cref="Indexation.IndexationWorker"/>'s
-/// in-memory channel - this queue is durable, since an upload's file already sits in MinIO
-/// regardless of whether this process is running (upload spec §2).
+/// there is nothing eligible. The sole path from a stored CIIR file to a completed indexation - an
+/// upload's file already sits in MinIO regardless of whether this process is running, so this
+/// queue is durable rather than in-memory (upload spec §2).
 /// </summary>
 public sealed class CiirUploadWorker : BackgroundService
 {

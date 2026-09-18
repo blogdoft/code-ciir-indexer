@@ -6,8 +6,8 @@ namespace Ciir.Indexer.Application.UseCases;
 
 /// <summary>
 /// Creates a project directly through the projects CRUD API - as opposed to
-/// <see cref="StartIndexation"/>'s <c>EnsureProjectAsync</c> upsert-by-name, a duplicate name here
-/// is a 409, not a silent update.
+/// <see cref="IProjectStore.EnsureProjectAsync"/>'s upsert-by-name behavior (used implicitly by
+/// the CIIR upload flow), a duplicate name here is a 409, not a silent update.
 /// </summary>
 public sealed class CreateProject
 {

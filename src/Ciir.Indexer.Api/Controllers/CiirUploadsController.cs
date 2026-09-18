@@ -15,15 +15,17 @@ using Microsoft.Net.Http.Headers;
 namespace Ciir.Indexer.Api.Controllers;
 
 /// <summary>
-/// Accepts a CIIR JSONL file over HTTP for a project that must already be registered (upload spec
-/// §3/§4), storing it in object storage for a background worker to pick up later, and reports an
-/// upload's status. Contains no indexing logic of its own - it streams the request body without
-/// ever buffering the whole file (upload spec §5/§12), delegates all validation to
-/// <see cref="SubmitCiirUpload"/>, and maps the result to an HTTP response.
+/// The only way to get a CIIR JSONL file indexed: either <see cref="UploadAsync"/> streams it here
+/// over HTTP, or <see cref="RegisterAsync"/> registers one the caller already placed directly in
+/// object storage (the bring-your-own-upload path for files too large for a single HTTP request).
+/// Both store/confirm the file in object storage for a background worker to pick up later, and
+/// this also reports an upload's status. Contains no indexing logic of its own - it delegates all
+/// validation to <see cref="SubmitCiirUpload"/>/<see cref="RegisterCiirUpload"/> and maps the
+/// result to an HTTP response.
 /// </summary>
-// S6960: flags this controller for having both a POST and a GET action - the standard REST
-// create+read pair for a single resource (submit an upload, check its status), not two
-// responsibilities.
+// S6960: flags this controller for having three actions. That's the standard REST create+read
+// pair for a single resource (submit/register an upload, check its status) plus a second create
+// route for the same resource via a different ingestion path, not three responsibilities.
 #pragma warning disable S6960
 [ApiController]
 [Route("api/ciir-uploads")]
@@ -38,16 +40,23 @@ public sealed class CiirUploadsController : ControllerBase
     private const long RequestBodySizeMargin = 1024 * 1024;
 
     private readonly SubmitCiirUpload _submitCiirUpload;
+    private readonly RegisterCiirUpload _registerCiirUpload;
     private readonly ICiirUploadStore _uploadStore;
     private readonly UploadOptions _options;
 
     /// <summary>Initializes a new instance of the <see cref="CiirUploadsController"/> class.</summary>
     /// <param name="submitCiirUpload">Validates the request and stores the uploaded file.</param>
+    /// <param name="registerCiirUpload">Validates the request and registers an already-uploaded file.</param>
     /// <param name="uploadStore">Reads back an upload's current status for <see cref="GetAsync"/>.</param>
     /// <param name="options">Configures the maximum accepted file size.</param>
-    public CiirUploadsController(SubmitCiirUpload submitCiirUpload, ICiirUploadStore uploadStore, UploadOptions options)
+    public CiirUploadsController(
+        SubmitCiirUpload submitCiirUpload,
+        RegisterCiirUpload registerCiirUpload,
+        ICiirUploadStore uploadStore,
+        UploadOptions options)
     {
         _submitCiirUpload = submitCiirUpload;
+        _registerCiirUpload = registerCiirUpload;
         _uploadStore = uploadStore;
         _options = options;
     }
@@ -117,6 +126,38 @@ public sealed class CiirUploadsController : ControllerBase
         }
 
         return BadRequestProblem("The 'ciirFile' part is required.");
+    }
+
+    /// <summary>Registers a CIIR JSONL file already placed directly in object storage.</summary>
+    /// <remarks>
+    /// For files too large to push through <c>POST /api/ciir-uploads</c>'s own request body: upload
+    /// the <c>.jsonl</c> file directly to this service's configured MinIO bucket yourself (e.g. via
+    /// <c>mc cp</c>), then call this endpoint with the object key you uploaded it under. The
+    /// object's existence is verified before registering it, so a typo in <c>objectKey</c> fails
+    /// immediately rather than leaving a pending upload that can never be processed. From here on,
+    /// this behaves exactly like <c>POST /api/ciir-uploads</c> - poll
+    /// <c>GET /api/ciir-uploads/{uploadId}</c> with the id returned here to observe progress.
+    /// </remarks>
+    /// <param name="request">The already-registered project and the object key the file was uploaded under.</param>
+    /// <param name="cancellationToken">Propagates request cancellation.</param>
+    /// <returns>
+    /// <c>202 Accepted</c> with a <see cref="SubmitCiirUploadResponse"/> once the upload is
+    /// registered; <c>400</c> Problem Details when <c>projectId</c>/<c>objectKey</c> is missing or
+    /// invalid, or the object key's extension is not <c>.jsonl</c>; a body-less <c>404</c> when
+    /// <c>projectId</c> does not reference a known project, or when no object exists at
+    /// <c>objectKey</c> in the configured bucket.
+    /// </returns>
+    [HttpPost("register")]
+    [ProducesResponseType<SubmitCiirUploadResponse>(StatusCodes.Status202Accepted, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RegisterAsync([FromBody] RegisterCiirUploadRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _registerCiirUpload.ExecuteAsync(request.ProjectId, request.ObjectKey, cancellationToken);
+
+        return result.Map(
+            onSuccess: upload => (IActionResult)Accepted(new SubmitCiirUploadResponse(upload.Id, upload.Status.ToWireString())),
+            onFailure: failure => failure.ToActionResult(HttpContext));
     }
 
     /// <summary>Reports the current status of one CIIR upload.</summary>

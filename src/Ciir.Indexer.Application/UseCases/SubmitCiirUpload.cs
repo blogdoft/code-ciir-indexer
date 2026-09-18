@@ -1,7 +1,6 @@
 using BlogDoFT.Libs.ResultPattern;
 using Ciir.Indexer.Application.Ports;
 using Ciir.Indexer.Core;
-using System.Globalization;
 
 namespace Ciir.Indexer.Application.UseCases;
 
@@ -9,9 +8,9 @@ namespace Ciir.Indexer.Application.UseCases;
 /// The CIIR upload endpoint's entry point (upload spec §4): validates the request, streams the
 /// file into object storage, and creates the <see cref="CiirUpload"/> row a background worker will
 /// later pick up. Never creates or updates a project - <c>projectId</c> (see
-/// <see cref="ExecuteAsync"/>) must already exist (upload spec §3), unlike the local-path
-/// <c>StartIndexation</c> flow. Contains no HTTP/multipart-parsing logic of its own; the controller
-/// that calls this is a pure delivery mechanism that has already isolated the file's stream.
+/// <see cref="ExecuteAsync"/>) must already exist (upload spec §3). Contains no
+/// HTTP/multipart-parsing logic of its own; the controller that calls this is a pure delivery
+/// mechanism that has already isolated the file's stream.
 /// </summary>
 public sealed class SubmitCiirUpload
 {
@@ -51,16 +50,15 @@ public sealed class SubmitCiirUpload
         long? contentLength,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(projectId) ||
-            !long.TryParse(projectId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedProjectId))
+        if (!CiirUploadValidation.TryParseProjectId(projectId, out var parsedProjectId, out var parseFailure))
         {
-            return Result<CiirUpload>.FromFailure(
-                new Failure("400-project-id-required", "The 'projectId' field is required and must be a valid project id."));
+            return Result<CiirUpload>.FromFailure(parseFailure!);
         }
 
-        if (!string.Equals(Path.GetExtension(fileName), ".jsonl", StringComparison.OrdinalIgnoreCase))
+        var extensionFailure = CiirUploadValidation.ValidateJsonlExtension(fileName);
+        if (extensionFailure is not null)
         {
-            return Result<CiirUpload>.FromFailure(new Failure("400-invalid-extension", "Expected a '.jsonl' file."));
+            return Result<CiirUpload>.FromFailure(extensionFailure);
         }
 
         if (contentLength is { } length && length > _options.MaxCiirFileSizeBytes)

@@ -47,4 +47,14 @@ public interface IObjectStorage
     /// <param name="objectKey">The object key to delete.</param>
     /// <param name="cancellationToken">Propagates request/run cancellation.</param>
     Task DeleteAsync(string bucket, string objectKey, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns whether an object already exists at <paramref name="objectKey"/> - used to validate
+    /// a bring-your-own-upload registration (<c>POST /api/ciir-uploads/register</c>) before queuing
+    /// it for processing, since nothing else in that flow ever writes the object itself.
+    /// </summary>
+    /// <param name="bucket">The bucket to check.</param>
+    /// <param name="objectKey">The object key to check.</param>
+    /// <param name="cancellationToken">Propagates request cancellation.</param>
+    Task<bool> ExistsAsync(string bucket, string objectKey, CancellationToken cancellationToken = default);
 }

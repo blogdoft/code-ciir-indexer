@@ -43,14 +43,14 @@ public sealed class RunIndexation
 
     /// <summary>
     /// Runs the already-created <paramref name="runId"/> to completion. Assumes the run row exists
-    /// (created by <c>StartIndexation</c>) with status <see cref="IndexingStatus.Pending"/>.
+    /// (created by <c>ProcessNextCiirUpload</c>) with status <see cref="IndexingStatus.Pending"/>.
     /// </summary>
     /// <param name="runId">The run to execute.</param>
-    /// <param name="path">The validated, absolute CIIR JSONL path to index.</param>
+    /// <param name="path">The staged, absolute CIIR JSONL path to index.</param>
     /// <param name="projectId">
-    /// The project every record in the file is bound to, already resolved by
-    /// <c>StartIndexation</c> from the caller-supplied request - never derived from any record's
-    /// own <c>project</c> field.
+    /// The project every record in the file is bound to, already resolved from the caller-supplied
+    /// request before this run was created - never derived from any record's own <c>project</c>
+    /// field.
     /// </param>
     /// <param name="cancellationToken">Propagates run cancellation.</param>
     public async Task ExecuteAsync(Guid runId, string path, long projectId, CancellationToken cancellationToken = default)

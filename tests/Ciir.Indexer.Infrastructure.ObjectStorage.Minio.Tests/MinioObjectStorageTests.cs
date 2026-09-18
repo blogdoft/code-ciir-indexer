@@ -123,4 +123,26 @@ public sealed class MinioObjectStorageTests : IAsyncLifetime
     {
         await Should.NotThrowAsync(() => _sut.EnsureBucketExistsAsync(Bucket));
     }
+
+    [Fact]
+    public async Task ExistsAsync_ExistingObject_ReturnsTrue()
+    {
+        var objectKey = $"{Guid.NewGuid():N}/ciir.jsonl";
+        using (var uploadStream = new MemoryStream("data"u8.ToArray()))
+        {
+            await _sut.UploadAsync(Bucket, objectKey, uploadStream, 4, "application/x-ndjson");
+        }
+
+        var exists = await _sut.ExistsAsync(Bucket, objectKey);
+
+        exists.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task ExistsAsync_UnknownObject_ReturnsFalse()
+    {
+        var exists = await _sut.ExistsAsync(Bucket, $"{Guid.NewGuid():N}/ciir.jsonl");
+
+        exists.ShouldBeFalse();
+    }
 }

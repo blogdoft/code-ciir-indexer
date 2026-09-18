@@ -8,7 +8,7 @@ namespace Ciir.Indexer.Application.UseCases;
 /// <summary>
 /// Document Import (spec §5): streams a CIIR JSONL file, decides per document whether a new
 /// embedding is needed via the fingerprint addendum's algorithm, and upserts the result under the
-/// caller-supplied project resolved once by <c>StartIndexation</c> (spec's "Atualização —
+/// caller-supplied project resolved once per run, before this runs (spec's "Atualização —
 /// Identidade de projeto informada pelo chamador") - each record's own <c>project</c> field is not
 /// consulted here. Independent of the future Relation Import use case - both read the same file on
 /// their own, per spec §4.

@@ -16,7 +16,6 @@ public static class ApplicationServiceCollectionExtensions
         services.AddSingleton<IEmbeddingFingerprintGenerator, EmbeddingFingerprintGenerator>();
         services.AddSingleton<ICiirJsonlReader, JsonlCiirReader>();
 
-        services.AddSingleton<StartIndexation>();
         services.AddSingleton<ImportDocuments>();
         services.AddSingleton<ImportRelations>();
         services.AddSingleton<ResolveRelations>();

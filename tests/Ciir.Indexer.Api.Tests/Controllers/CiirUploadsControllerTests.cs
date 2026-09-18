@@ -42,6 +42,8 @@ public sealed class CiirUploadsControllerTests
             .UploadAsync(
                 Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<long?>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(callInfo => DrainAsync(callInfo.ArgAt<Stream>(2), callInfo.ArgAt<CancellationToken>(5)));
+
+        _objectStorage.ExistsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
     }
 
     [Fact]
@@ -127,6 +129,64 @@ public sealed class CiirUploadsControllerTests
         context.Request.ContentType = "application/json";
 
         var result = await CreateSut(context).UploadAsync(CancellationToken.None);
+
+        var problem = result.ShouldBeOfType<ObjectResult>();
+        problem.StatusCode.ShouldBe(StatusCodes.Status400BadRequest);
+    }
+
+    [Fact]
+    public async Task RegisterAsync_ValidRequest_ReturnsAcceptedWithTheUploadIdAndStatus()
+    {
+        var upload = BuildUpload();
+        _uploadStore.CreateAsync(ExistingProjectId, Bucket, "already-uploaded/ciir.jsonl", Arg.Any<CancellationToken>()).Returns(upload);
+
+        var result = await CreateSut(new DefaultHttpContext())
+            .RegisterAsync(new RegisterCiirUploadRequest("42", "already-uploaded/ciir.jsonl"), CancellationToken.None);
+
+        var accepted = result.ShouldBeOfType<AcceptedResult>();
+        var body = accepted.Value.ShouldBeOfType<SubmitCiirUploadResponse>();
+        body.UploadId.ShouldBe(upload.Id);
+        body.Status.ShouldBe("pending");
+    }
+
+    [Fact]
+    public async Task RegisterAsync_ObjectDoesNotExist_ReturnsNotFoundWithoutRegisteringAnything()
+    {
+        _objectStorage.ExistsAsync(Bucket, "missing/ciir.jsonl", Arg.Any<CancellationToken>()).Returns(false);
+
+        var result = await CreateSut(new DefaultHttpContext())
+            .RegisterAsync(new RegisterCiirUploadRequest("42", "missing/ciir.jsonl"), CancellationToken.None);
+
+        result.ShouldBeOfType<NotFoundResult>();
+        await _uploadStore.DidNotReceive().CreateAsync(
+            Arg.Any<long>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RegisterAsync_UnknownProject_ReturnsNotFoundWithoutCheckingTheObject()
+    {
+        var result = await CreateSut(new DefaultHttpContext())
+            .RegisterAsync(new RegisterCiirUploadRequest("999", "already-uploaded/ciir.jsonl"), CancellationToken.None);
+
+        result.ShouldBeOfType<NotFoundResult>();
+        await _objectStorage.DidNotReceive().ExistsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task RegisterAsync_MissingObjectKey_ReturnsBadRequest()
+    {
+        var result = await CreateSut(new DefaultHttpContext())
+            .RegisterAsync(new RegisterCiirUploadRequest("42", null), CancellationToken.None);
+
+        var problem = result.ShouldBeOfType<ObjectResult>();
+        problem.StatusCode.ShouldBe(StatusCodes.Status400BadRequest);
+    }
+
+    [Fact]
+    public async Task RegisterAsync_WrongExtension_ReturnsBadRequest()
+    {
+        var result = await CreateSut(new DefaultHttpContext())
+            .RegisterAsync(new RegisterCiirUploadRequest("42", "already-uploaded/ciir.json"), CancellationToken.None);
 
         var problem = result.ShouldBeOfType<ObjectResult>();
         problem.StatusCode.ShouldBe(StatusCodes.Status400BadRequest);
@@ -226,7 +286,8 @@ public sealed class CiirUploadsControllerTests
     private CiirUploadsController CreateSut(HttpContext context)
     {
         var submitCiirUpload = new SubmitCiirUpload(_projectStore, _objectStorage, _uploadStore, Bucket, _options);
-        return new CiirUploadsController(submitCiirUpload, _uploadStore, _options)
+        var registerCiirUpload = new RegisterCiirUpload(_projectStore, _objectStorage, _uploadStore, Bucket);
+        return new CiirUploadsController(submitCiirUpload, registerCiirUpload, _uploadStore, _options)
         {
             ControllerContext = new ControllerContext { HttpContext = context },
         };

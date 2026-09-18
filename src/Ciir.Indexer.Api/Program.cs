@@ -1,6 +1,4 @@
 using Ciir.Indexer.Api.Controllers;
-using Ciir.Indexer.Api.Indexation;
-using Ciir.Indexer.Api.Input;
 using Ciir.Indexer.Api.OpenApi;
 using Ciir.Indexer.Api.Uploads;
 using Ciir.Indexer.Application;
@@ -74,30 +72,25 @@ try
         });
     });
 
-    // --- Path validation (spec §42) and the Application use-case layer. ---
-    var pathOptions = builder.Configuration.GetSection(IndexerPathOptions.SectionName).Get<IndexerPathOptions>()
-        ?? throw new InvalidOperationException($"Missing required configuration section '{IndexerPathOptions.SectionName}'.");
-    builder.Services.AddSingleton(pathOptions);
-    builder.Services.AddSingleton<IInputResolver, InputPathResolver>();
-
     var indexingOptions = builder.Configuration.GetSection(IndexingOptions.SectionName).Get<IndexingOptions>() ?? new IndexingOptions();
     builder.Services.AddCiirIndexerApplication(indexingOptions);
 
-    // --- Background execution (spec §2/§33): a bounded channel consumed by a single worker. ---
-    var queueCapacity = builder.Configuration.GetValue<int?>("Indexer:IndexationQueueCapacity") ?? 100;
-    builder.Services.AddSingleton(new IndexationChannel(queueCapacity));
-    builder.Services.AddSingleton<IIndexationQueue>(sp => sp.GetRequiredService<IndexationChannel>());
-    builder.Services.AddHostedService<IndexationWorker>();
-
     // --- CIIR uploads (upload spec §4/§8): the bucket name is read from the "Minio" section here,
     // in the composition root, rather than threaded through the Application layer, which must not
-    // depend on an infrastructure-specific options type. ---
+    // depend on an infrastructure-specific options type. Uploading (POST /api/ciir-uploads) and
+    // registering an already-uploaded file (POST /api/ciir-uploads/register) are the only two ways
+    // a CIIR file reaches indexation - there is no local-filesystem-path entry point. ---
     builder.Services.AddSingleton(sp => new SubmitCiirUpload(
         sp.GetRequiredService<IProjectStore>(),
         sp.GetRequiredService<IObjectStorage>(),
         sp.GetRequiredService<ICiirUploadStore>(),
         minioOptions.BucketName,
         uploadOptions));
+    builder.Services.AddSingleton(sp => new RegisterCiirUpload(
+        sp.GetRequiredService<IProjectStore>(),
+        sp.GetRequiredService<IObjectStorage>(),
+        sp.GetRequiredService<ICiirUploadStore>(),
+        minioOptions.BucketName));
     builder.Services.AddSingleton(sp => new ProcessNextCiirUpload(
         sp.GetRequiredService<ICiirUploadStore>(),
         sp.GetRequiredService<IObjectStorage>(),
@@ -120,6 +113,16 @@ try
     using (var migrationScope = app.Services.CreateScope())
     {
         migrationScope.ServiceProvider.GetRequiredService<DatabaseMigrator>().Apply();
+    }
+
+    // Recover from a crash mid-run (spec §27): mark any indexing run left in-progress by a
+    // previous process lifetime as failed. A one-shot startup check, not an ongoing background
+    // loop - every run is now started synchronously within CiirUploadWorker's own polling cycle
+    // (ProcessNextCiirUpload -> RunIndexation), so there is no separate queue/worker to recover on.
+    var reconciledRunIds = await app.Services.GetRequiredService<IIndexingRunStore>().ReconcileOrphanedRunsAsync();
+    if (reconciledRunIds.Count > 0)
+    {
+        app.Logger.LogWarning("Marked {Count} orphaned indexing run(s) as failed on startup.", reconciledRunIds.Count);
     }
 
     if (app.Environment.IsDevelopment())

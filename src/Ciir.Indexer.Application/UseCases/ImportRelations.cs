@@ -8,7 +8,7 @@ namespace Ciir.Indexer.Application.UseCases;
 /// <summary>
 /// Relation Import (spec §15): a second, fully independent pass over the same CIIR JSONL file -
 /// never depends on Document Import having run or completed (spec §4/§18). Every relation in the
-/// file is written under the caller-supplied project resolved once by <c>StartIndexation</c>
+/// file is written under the caller-supplied project resolved once per run, before this runs
 /// (spec's "Atualização — Identidade de projeto informada pelo chamador") - each record's own
 /// <c>project</c> field is not consulted here. Batches by the number of relation rows accumulated
 /// rather than by CIIR record/line count, since a single record can carry anywhere from zero to

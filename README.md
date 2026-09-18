@@ -3,7 +3,24 @@
 Reads CIIR JSONL, generates embeddings, and upserts documents/relations into PostgreSQL +
 pgvector. See `CLAUDE.md` for architecture and tooling conventions, and `.specs/` for the
 detailed functional specs (`01-Spec-inicial.md` for the core indexer, `02-upload-ciir-minio.md`
-for the MinIO upload endpoint).
+for the MinIO upload endpoint, `04-uploads-only.md` for why the old local-path endpoint is gone).
+
+## Indexing a CIIR file
+
+There is no local-filesystem-path entry point - every CIIR file reaches indexation through MinIO,
+one of two ways:
+
+- **`POST /api/ciir-uploads`** (multipart, `projectId` + `ciirFile` fields): the default path for
+  most files, up to `Uploads:MaxCiirFileSizeBytes` (200 MB by default). This service streams the
+  file into its `ciir-uploads` bucket for you.
+- **`POST /api/ciir-uploads/register`** (JSON, `{"projectId": "...", "objectKey": "..."}"`): for a
+  file too large for a single HTTP request. Upload it directly to the same bucket yourself first
+  (e.g. `mc cp big-ciir.jsonl local/ciir-uploads/<objectKey>` using the least-privilege
+  `ciir-indexer-uploader` credentials below, or a presigned URL), then call this endpoint with the
+  key you uploaded it under. The object's existence is checked before it's registered.
+
+Either way, poll `GET /api/ciir-uploads/{uploadId}` for status, then `GET /api/indexations/{indexationId}`
+once that reports an `indexationId`.
 
 ## MinIO — least-privilege upload user
 
