@@ -12,6 +12,7 @@ using Ciir.Indexer.Infrastructure.Embeddings.OpenAI;
 using Ciir.Indexer.Infrastructure.ObjectStorage.Minio;
 using Ciir.Indexer.Infrastructure.PostgreSql;
 using Ciir.Indexer.Infrastructure.PostgreSql.Migrations;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -24,6 +25,12 @@ builder.Logging.AddJsonConsole();
 try
 {
     builder.Services.AddControllers();
+    builder.Services.Configure<ApiBehaviorOptions>(options =>
+    {
+        // Without this, [ApiController] rewrites a bare NotFoundResult() into a JSON Problem
+        // Details body - every controller here documents 404 responses as body-less.
+        options.SuppressMapClientErrors = true;
+    });
     builder.Services.AddHealthChecks();
     builder.Services.AddOpenApi(options =>
     {

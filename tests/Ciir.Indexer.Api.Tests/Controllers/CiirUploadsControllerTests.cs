@@ -26,7 +26,14 @@ public sealed class CiirUploadsControllerTests
     {
         _projectStore
             .GetByIdAsync(ExistingProjectId, Arg.Any<CancellationToken>())
-            .Returns(new Project { Id = ExistingProjectId, Name = "MyProject", EmbeddingModel = new EmbeddingModel("bge-m3", 1024) });
+            .Returns(new Project
+            {
+                Id = ExistingProjectId,
+                Name = "MyProject",
+                EmbeddingModel = new EmbeddingModel("bge-m3", 1024),
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+            });
 
         // A real IObjectStorage adapter reads the stream through to completion, which is exactly
         // what makes SizeLimitedStream's mid-stream size check fire - a substitute that never

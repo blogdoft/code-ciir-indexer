@@ -141,6 +141,8 @@ public sealed class ProcessNextCiirUploadTests
         Id = id,
         Name = "MyProject",
         EmbeddingModel = new EmbeddingModel("bge-m3", 2),
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow,
     };
 
     private static IndexingRun BuildRun(long projectId, IndexingStatus status, string? error = null) => new()

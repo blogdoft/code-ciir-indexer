@@ -117,6 +117,8 @@ public sealed class IndexationsControllerTests
         Id = 1,
         Name = "MyProject",
         EmbeddingModel = new EmbeddingModel("bge-m3", 1024),
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow,
     };
 
     private static IndexingRun BuildRun(IndexingStatus status, long projectId, IndexingCounters? counters = null) => new()

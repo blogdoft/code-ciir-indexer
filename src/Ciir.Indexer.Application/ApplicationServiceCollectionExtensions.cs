@@ -22,6 +22,11 @@ public static class ApplicationServiceCollectionExtensions
         services.AddSingleton<ResolveRelations>();
         services.AddSingleton<RunIndexation>();
 
+        services.AddSingleton<ListProjects>();
+        services.AddSingleton<CreateProject>();
+        services.AddSingleton<UpdateProject>();
+        services.AddSingleton<DeleteProject>();
+
         return services;
     }
 }

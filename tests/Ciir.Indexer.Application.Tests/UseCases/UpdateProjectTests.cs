@@ -1,0 +1,76 @@
+using Ciir.Indexer.Application.Ports;
+using Ciir.Indexer.Application.UseCases;
+using Ciir.Indexer.Core;
+using NSubstitute;
+using Shouldly;
+
+namespace Ciir.Indexer.Application.Tests.UseCases;
+
+public sealed class UpdateProjectTests
+{
+    private readonly IProjectStore _projectStore = Substitute.For<IProjectStore>();
+
+    [Fact]
+    public async Task ExecuteAsync_ExistingProject_UpdatesAndReturnsIt()
+    {
+        var existing = BuildProject();
+        var updated = existing with { Name = "renamed" };
+        _projectStore.GetByIdAsync(existing.Id, Arg.Any<CancellationToken>()).Returns(existing);
+        _projectStore.ExistsByNameAsync("renamed", existing.Id, Arg.Any<CancellationToken>()).Returns(false);
+        _projectStore
+            .UpdateAsync(existing.Id, "renamed", null, null, Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>())
+            .Returns(updated);
+
+        var result = await CreateSut().ExecuteAsync(existing.Id, "renamed", "bge-m3", 1024, null, null);
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldBe(updated);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_MissingProject_ReturnsProjectNotFound()
+    {
+        _projectStore.GetByIdAsync(999, Arg.Any<CancellationToken>()).Returns((Project?)null);
+
+        var result = await CreateSut().ExecuteAsync(999, "proj", "bge-m3", 1024, null, null);
+
+        result.IsFailure.ShouldBeTrue();
+        result.Failure.Code.ShouldBe("404-project-not-found");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_NameUsedByAnotherProject_ReturnsNameConflict()
+    {
+        var existing = BuildProject();
+        _projectStore.GetByIdAsync(existing.Id, Arg.Any<CancellationToken>()).Returns(existing);
+        _projectStore.ExistsByNameAsync("taken", existing.Id, Arg.Any<CancellationToken>()).Returns(true);
+
+        var result = await CreateSut().ExecuteAsync(existing.Id, "taken", "bge-m3", 1024, null, null);
+
+        result.IsFailure.ShouldBeTrue();
+        result.Failure.Code.ShouldBe("409-name-conflict");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public async Task ExecuteAsync_MissingName_ReturnsNameRequired(string? name)
+    {
+        var result = await CreateSut().ExecuteAsync(1, name, "bge-m3", 1024, null, null);
+
+        result.IsFailure.ShouldBeTrue();
+        result.Failure.Code.ShouldBe("400-name-required");
+        await _projectStore.DidNotReceive().GetByIdAsync(Arg.Any<long>(), Arg.Any<CancellationToken>());
+    }
+
+    private static Project BuildProject() => new()
+    {
+        Id = 1,
+        Name = "proj",
+        EmbeddingModel = new EmbeddingModel("bge-m3", 1024),
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow,
+    };
+
+    private UpdateProject CreateSut() => new(_projectStore);
+}

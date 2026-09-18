@@ -67,7 +67,14 @@ public sealed class SubmitCiirUploadTests
     [Fact]
     public async Task ExecuteAsync_ValidRequest_UploadsThenCreatesThePendingRecord()
     {
-        var project = new Project { Id = 42, Name = "MyProject", EmbeddingModel = new EmbeddingModel("bge-m3", 1024) };
+        var project = new Project
+        {
+            Id = 42,
+            Name = "MyProject",
+            EmbeddingModel = new EmbeddingModel("bge-m3", 1024),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
         _projectStore.GetByIdAsync(42, Arg.Any<CancellationToken>()).Returns(project);
         using var content = new MemoryStream([1, 2, 3]);
         var upload = new CiirUpload

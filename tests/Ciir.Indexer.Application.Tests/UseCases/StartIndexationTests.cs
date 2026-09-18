@@ -54,7 +54,14 @@ public sealed class StartIndexationTests
     public async Task ExecuteAsync_ValidRequest_ResolvesTheProjectThenCreatesAndEnqueuesTheRun()
     {
         _inputResolver.ResolveAndValidate("/data/ciir/ciir.jsonl").Returns(Result<string>.FromSuccess("/data/ciir/ciir.jsonl"));
-        var project = new Project { Id = 42, Name = "MyProject", EmbeddingModel = new EmbeddingModel("bge-m3", 1024) };
+        var project = new Project
+        {
+            Id = 42,
+            Name = "MyProject",
+            EmbeddingModel = new EmbeddingModel("bge-m3", 1024),
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
         _projectStore
             .EnsureProjectAsync("MyProject", "https://git.example/repo", "https://raw.example/repo", Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>())
             .Returns(project);
