@@ -30,10 +30,12 @@ try
         options.SuppressMapClientErrors = true;
     });
     builder.Services.AddHealthChecks();
+    builder.Services.AddHttpContextAccessor();
     builder.Services.AddOpenApi(options =>
     {
         options.AddDocumentTransformer<ApiInfoDocumentTransformer>();
         options.AddDocumentTransformer<ControllerTagDescriptionsDocumentTransformer>();
+        options.AddDocumentTransformer<PublicServerDocumentTransformer>();
     });
 
     // --- Embeddings: register every provider module, then resolve the one configured provider once
@@ -125,15 +127,18 @@ try
         app.Logger.LogWarning("Marked {Count} orphaned indexing run(s) as failed on startup.", reconciledRunIds.Count);
     }
 
-    if (app.Environment.IsDevelopment())
+    // Always mapped (not gated to Development) so Swagger is reachable in this cluster too - both
+    // routes live under "api/indexer" since that's the only prefix the blogdoft.home.arpa ingress
+    // forwards to this service (see .eng/k8s/ingress.yaml). The swagger.json URL is relative
+    // ("../openapi/...") rather than root-relative, so the browser resolves it against whatever
+    // prefix it is actually browsing under (locally or through the ingress) without the app
+    // needing to know about that prefix itself.
+    app.MapOpenApi("/api/indexer/openapi/{documentName}.json");
+    app.UseSwaggerUI(options =>
     {
-        app.MapOpenApi();
-        app.UseSwaggerUI(options =>
-        {
-            options.SwaggerEndpoint("/openapi/v1.json", "CIIR Indexer API");
-            options.RoutePrefix = "swagger";
-        });
-    }
+        options.SwaggerEndpoint("../openapi/v1.json", "CIIR Indexer API");
+        options.RoutePrefix = "api/indexer/swagger";
+    });
 
     app.UseRateLimiter();
     app.UseAuthorization();

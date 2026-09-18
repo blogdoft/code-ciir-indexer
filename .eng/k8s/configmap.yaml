@@ -8,7 +8,14 @@ metadata:
   name: code-ciir-indexer-config
 data:
   ASPNETCORE_URLS: "http://+:8080"
-  ASPNETCORE_ENVIRONMENT: "Development"
+  ASPNETCORE_ENVIRONMENT: "Production"
+  # Swagger/OpenAPI is always mapped regardless of environment (Program.cs), so this is the only
+  # thing telling the app it's reachable through the blogdoft.home.arpa/code-brain ingress prefix
+  # (which the app otherwise has no way to see - Traefik strips it before forwarding, see
+  # .eng/k8s/middleware.yaml) - used to build the OpenAPI document's "servers" entry so Swagger
+  # UI's "Try it out" requests land on a real, resolvable URL. Left unset locally, where the
+  # current request's own scheme/host stand in for it instead.
+  PublicBaseUrl: "https://blogdoft.home.arpa/code-brain"
   # Same shared Ollama instance code-rag-api already uses for embeddings. Model/Dimensions are
   # set here (not per-project): ciir_documents.embedding has one fixed vector width for the
   # whole code3rag installation, so every code-queries question is embedded with this single
