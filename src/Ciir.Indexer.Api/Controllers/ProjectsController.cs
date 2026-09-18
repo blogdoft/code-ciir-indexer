@@ -20,7 +20,7 @@ namespace Ciir.Indexer.Api.Controllers;
 // splitting it into multiple controllers would fragment one resource's operations for no benefit.
 #pragma warning disable S6960
 [ApiController]
-[Route("api/projects")]
+[Route("api/indexer/projects")]
 public sealed class ProjectsController : ControllerBase
 {
     private const string GetProjectRouteName = "GetProject";

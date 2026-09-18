@@ -1,0 +1,12 @@
+# Strips the /code-brain path segment before Traefik forwards the request to the service, since
+# /code-brain is a routing-only prefix on the shared blogdoft.home.arpa host - the backend's
+# controllers are rooted at "api/indexer/..." (no "code-brain" segment). Referenced from
+# ingress.yaml via the traefik.ingress.kubernetes.io/router.middlewares annotation.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: code-ciir-indexer-strip-code-brain
+spec:
+  stripPrefix:
+    prefixes:
+      - /code-brain

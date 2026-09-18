@@ -12,7 +12,7 @@ namespace Ciir.Indexer.Api.Controllers;
 /// status.
 /// </summary>
 [ApiController]
-[Route("api/indexations")]
+[Route("api/indexer/indexations")]
 public sealed class IndexationsController : ControllerBase
 {
     private readonly IIndexingRunStore _runStore;

@@ -28,7 +28,7 @@ namespace Ciir.Indexer.Api.Controllers;
 // route for the same resource via a different ingestion path, not three responsibilities.
 #pragma warning disable S6960
 [ApiController]
-[Route("api/ciir-uploads")]
+[Route("api/indexer/ciir-uploads")]
 public sealed class CiirUploadsController : ControllerBase
 {
     /// <summary>The <c>Microsoft.AspNetCore.RateLimiting</c> policy name bounding concurrent uploads (upload spec §11).</summary>

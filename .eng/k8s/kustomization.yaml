@@ -11,6 +11,7 @@ resources:
   - configmap.yaml
   - ingress.yaml
   - serverstransport.yaml
+  - middleware.yaml
 
 images:
   - name: code-ciir-indexer

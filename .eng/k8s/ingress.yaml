@@ -1,6 +1,13 @@
-# ingressClassName/host are guesses (Traefik is k3s' default, host follows the
-# forgejo.home.arpa/code-rag-api.home.arpa naming convention) - adjust to match your cluster's
-# actual ingress controller and desired hostname before applying.
+# ingressClassName is a guess (Traefik is k3s' default) - adjust to match your cluster's actual
+# ingress controller before applying.
+#
+# host/path intentionally deviate from the code-rag-api.home.arpa (subdomain-per-service)
+# convention used by other services in this cluster: this service is routed via a shared host
+# (blogdoft.home.arpa) under the shared /code-brain path instead. /code-brain is stripped by the
+# code-ciir-indexer-strip-code-brain Middleware (middleware.yaml) before forwarding, since the
+# backend's controllers are rooted at "api/indexer/..." (see Ciir.Indexer.Api Controllers) with no
+# "code-brain" segment. Format for router.middlewares: <namespace>-<middleware-name>@kubernetescrd
+# (this Ingress is deployed into code-rag - see service.yaml's serverstransport annotation).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -8,13 +15,14 @@ metadata:
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
     traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: code-rag-code-ciir-indexer-strip-code-brain@kubernetescrd
 spec:
   ingressClassName: traefik
   rules:
-    - host: code-ciir-indexer.home.arpa
+    - host: blogdoft.home.arpa
       http:
         paths:
-          - path: /
+          - path: /code-brain/api/indexer
             pathType: Prefix
             backend:
               service:
