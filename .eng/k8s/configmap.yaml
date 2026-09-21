@@ -44,3 +44,17 @@ data:
   Minio__Endpoint: "minio.minio.svc.cluster.local:9000"
   Minio__UseSsl: "false"
   Minio__BucketName: "ciir-uploads"
+  # Keycloak authentication (.specs/05-keycloak-auth.md) - off by default: the API stays open until
+  # Keycloak__Enabled is "true". The other Keycloak__* values are IGNORED while it is off, so filling
+  # them in does not protect anything by itself. Enabled=true makes every endpoint require a Bearer
+  # token (except /health, which the readinessProbe in deployment.yaml calls without one, and
+  # Swagger/OpenAPI) and requires Authority - startup fails without it. Audience is optional; leave it
+  # unset to accept any audience. No Secret is needed: validating a token only takes the realm's
+  # public keys (JWKS).
+  # Keycloak__Enabled: "true"
+  # Keycloak__Authority: "https://keycloak.home.arpa/realms/blogdoft"
+  # Keycloak__Audience: "code-ciir-indexer"
+  # Optional: the Keycloak client this application is registered as - a public client (PKCE, no
+  # secret) that Swagger UI's Authorize button also logs in with, so the API and Swagger share one
+  # client id. See README.md ("Authentication") for the client settings it needs.
+  # Keycloak__ClientId: "code-ciir-indexer"

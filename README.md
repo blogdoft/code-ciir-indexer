@@ -3,7 +3,8 @@
 Reads CIIR JSONL, generates embeddings, and upserts documents/relations into PostgreSQL +
 pgvector. See `CLAUDE.md` for architecture and tooling conventions, and `.specs/` for the
 detailed functional specs (`01-Spec-inicial.md` for the core indexer, `02-upload-ciir-minio.md`
-for the MinIO upload endpoint, `04-uploads-only.md` for why the old local-path endpoint is gone).
+for the MinIO upload endpoint, `04-uploads-only.md` for why the old local-path endpoint is gone,
+`05-keycloak-auth.md` for the optional Keycloak authentication).
 
 ## Indexing a CIIR file
 
@@ -21,6 +22,46 @@ one of two ways:
 
 Either way, poll `GET /api/ciir-uploads/{uploadId}` for status, then `GET /api/indexations/{indexationId}`
 once that reports an `indexationId`.
+
+## Authentication (Keycloak)
+
+Authentication is **opt-in** and controlled by one explicit switch, `Keycloak:Enabled` (default
+`false`: every endpoint is open, and the rest of the section is ignored). Setting it to `true` turns on
+JWT bearer authentication: every route then requires an access token issued by the realm in
+`Keycloak:Authority` (`.specs/05-keycloak-auth.md`).
+
+> Filling in `Authority`/`Audience`/`ClientId` does **not** protect the API by itself - without
+> `Keycloak__Enabled=true` they are ignored and everything stays open.
+
+| Setting (`Keycloak__*` as env var) | Default | Meaning |
+|---|---|---|
+| `Enabled` | `false` | Turns authentication on/off. When `false`, all other `Keycloak` settings are ignored. |
+| `Authority` | *(empty)* | The realm's URL, e.g. `https://keycloak.example/realms/my-realm`. Required when `Enabled` is `true`. |
+| `Audience` | *(empty)* | If set, the token's `aud` claim must contain it. If empty, the audience isn't checked (Keycloak access tokens carry `aud: account` unless the client has an audience mapper). |
+| `ClientId` | *(empty)* | `client_id` of the realm client this application is registered as - a public client, and the same one Swagger UI logs in with (there is a single client id for the API and Swagger). When set (with `Enabled`), Swagger UI's **Authorize** redirects to the Keycloak login (see below). |
+| `RequireHttpsMetadata` | `true` | Set `false` only for a local, plain-HTTP Keycloak. |
+
+With `Enabled=true`, a missing, invalid or plain-HTTP `Authority` (while `RequireHttpsMetadata` is
+`true`) fails startup instead of serving traffic unprotected.
+
+Missing, expired or otherwise invalid tokens get `401` with a `WWW-Authenticate: Bearer` header and a
+Problem Details body. Any valid token from the realm is accepted - there is no per-role authorization.
+
+Deliberately left anonymous, even with Keycloak on: `GET /health` (the Kubernetes readiness probe has
+no token) and the OpenAPI document/Swagger UI (a browser can't attach a token to page navigation).
+In Swagger UI, **Authorize** takes an access token pasted into the `Bearer` field and, when
+`ClientId` is set, also offers an `OAuth2` login: it redirects to Keycloak (authorization code
++ PKCE) and comes back authorized, so "Try it out" works without fetching a token by hand. That
+needs a client in the realm with **Client authentication = off**, **Standard flow = on**,
+**PKCE Code Challenge Method = S256**, the Swagger `oauth2-redirect.html` URL in **Valid redirect
+URIs** (e.g. `https://blogdoft.home.arpa/code-brain/api/indexer/swagger/oauth2-redirect.html`,
+`http://localhost:5223/api/indexer/swagger/oauth2-redirect.html` locally) and the Swagger origin in
+**Web origins** (the browser exchanges the code for a token itself, so CORS applies). If `Audience`
+is set, give that client an audience mapper for it.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" https://blogdoft.home.arpa/code-brain/api/indexer/projects
+```
 
 ## MinIO — least-privilege upload user
 

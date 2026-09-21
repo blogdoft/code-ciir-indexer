@@ -1,3 +1,4 @@
+using Ciir.Indexer.Api.Authentication;
 using Ciir.Indexer.Api.Controllers;
 using Ciir.Indexer.Api.OpenApi;
 using Ciir.Indexer.Api.Uploads;
@@ -22,6 +23,14 @@ builder.Logging.AddJsonConsole();
 
 try
 {
+    // --- Keycloak authentication (auth spec): opt-in. Null unless "Keycloak:Enabled" is true, in
+    // which case no authentication is registered and every endpoint stays open. ---
+    var keycloakOptions = KeycloakOptions.FromConfiguration(builder.Configuration);
+    if (keycloakOptions is not null)
+    {
+        builder.Services.AddKeycloakAuthentication(keycloakOptions);
+    }
+
     builder.Services.AddControllers();
     builder.Services.Configure<ApiBehaviorOptions>(options =>
     {
@@ -37,6 +46,10 @@ try
         options.AddDocumentTransformer<ControllerTagDescriptionsDocumentTransformer>();
         options.AddDocumentTransformer<PublicServerDocumentTransformer>();
         options.AddOperationTransformer<CiirUploadRequestBodyOperationTransformer>();
+        if (keycloakOptions is not null)
+        {
+            options.AddDocumentTransformer<KeycloakSecurityDocumentTransformer>();
+        }
     });
 
     // --- Embeddings: register every provider module, then resolve the one configured provider once
@@ -134,16 +147,40 @@ try
     // ("../openapi/...") rather than root-relative, so the browser resolves it against whatever
     // prefix it is actually browsing under (locally or through the ingress) without the app
     // needing to know about that prefix itself.
-    app.MapOpenApi("/api/indexer/openapi/{documentName}.json");
+    //
+    // When Keycloak authentication is on, everything else requires a token (fallback policy), but
+    // the OpenAPI document and Swagger UI stay anonymous: a browser can't attach a Bearer token to
+    // page navigation, and they carry no project/upload data (auth spec, "Exceções deliberadas").
+    // UseSwaggerUI is middleware ahead of the authorization middleware, so it is anonymous by
+    // position; the OpenAPI document is an endpoint and opts out explicitly.
+    app.MapOpenApi("/api/indexer/openapi/{documentName}.json").AllowAnonymous();
     app.UseSwaggerUI(options =>
     {
         options.SwaggerEndpoint("../openapi/v1.json", "CIIR Indexer API");
         options.RoutePrefix = "api/indexer/swagger";
+
+        // "Authorize" redirects to the Keycloak login (authorization code + PKCE, public client)
+        // when a client id is configured (the API and Swagger UI share one Keycloak client); the redirect_uri, oauth2-redirect.html under this
+        // same prefix, is computed by the browser from the current URL.
+        if (keycloakOptions is { ClientId.Length: > 0 })
+        {
+            options.OAuthClientId(keycloakOptions.ClientId);
+            options.OAuthUsePkce();
+            options.OAuthScopes(KeycloakSecurityDocumentTransformer.OpenIdScope);
+        }
     });
 
-    app.UseRateLimiter();
+    // Authentication/authorization run before the rate limiter so an unauthenticated request is
+    // refused with 401 before it can occupy one of the limited upload slots. /health stays
+    // anonymous: the Kubernetes readiness probe calls it without a token.
+    if (keycloakOptions is not null)
+    {
+        app.UseAuthentication();
+    }
+
     app.UseAuthorization();
-    app.MapHealthChecks("/health").ExcludeFromDescription();
+    app.UseRateLimiter();
+    app.MapHealthChecks("/health").ExcludeFromDescription().AllowAnonymous();
     app.MapControllers();
 
     await app.RunAsync();
@@ -153,9 +190,14 @@ catch (Exception ex)
     // Configuration and database-connectivity problems (missing/invalid settings,
     // ConfigurationValidationException, DatabaseUnavailableException, host bind failures, ...) are
     // unrecoverable at startup: log why as structured JSON and terminate rather than serve traffic
-    // in a broken state.
-    using var loggerFactory = LoggerFactory.Create(logging => logging.AddJsonConsole());
-    loggerFactory.CreateLogger("Ciir.Indexer.Api.Program")
-        .LogCritical(ex, "Application failed to start and will terminate.");
+    // in a broken state. The console logger writes from a background queue, and Environment.Exit
+    // terminates the process without waiting for it - so the factory is disposed (which drains the
+    // queue) before exiting, otherwise the message below would be lost.
+    using (var loggerFactory = LoggerFactory.Create(logging => logging.AddJsonConsole()))
+    {
+        loggerFactory.CreateLogger("Ciir.Indexer.Api.Program")
+            .LogCritical(ex, "Application failed to start and will terminate.");
+    }
+
     Environment.Exit(1);
 }
