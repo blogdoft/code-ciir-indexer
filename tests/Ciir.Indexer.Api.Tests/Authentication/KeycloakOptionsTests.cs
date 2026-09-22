@@ -110,6 +110,8 @@ public sealed class KeycloakOptionsTests
             ["Keycloak:Authority"] = "  https://keycloak.example/realms/blogdoft ",
             ["Keycloak:Audience"] = " ciir-indexer ",
             ["Keycloak:ClientId"] = " swagger ",
+            ["Keycloak:MetadataAddress"] = " http://keycloak.internal.svc.cluster.local:8080/realms/blogdoft/.well-known/openid-configuration ",
+            ["Keycloak:RequireHttpsMetadata"] = "false",
         });
 
         var options = KeycloakOptions.FromConfiguration(configuration);
@@ -119,7 +121,61 @@ public sealed class KeycloakOptionsTests
         options.Authority.ShouldBe("https://keycloak.example/realms/blogdoft");
         options.Audience.ShouldBe("ciir-indexer");
         options.ClientId.ShouldBe("swagger");
-        options.RequireHttpsMetadata.ShouldBeTrue();
+        options.MetadataAddress.ShouldBe("http://keycloak.internal.svc.cluster.local:8080/realms/blogdoft/.well-known/openid-configuration");
+        options.RequireHttpsMetadata.ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("realms/blogdoft")]
+    [InlineData("ftp://keycloak.internal/realms/blogdoft/.well-known/openid-configuration")]
+    public void FromConfiguration_EnabledWithMetadataAddressNotAnAbsoluteHttpUrl_Throws(string metadataAddress)
+    {
+        var configuration = Configure(new()
+        {
+            ["Keycloak:Enabled"] = "true",
+            ["Keycloak:Authority"] = "https://keycloak.example/realms/blogdoft",
+            ["Keycloak:MetadataAddress"] = metadataAddress,
+        });
+
+        var exception = Should.Throw<InvalidOperationException>(() => KeycloakOptions.FromConfiguration(configuration));
+
+        exception.Message.ShouldContain("Keycloak:MetadataAddress");
+    }
+
+    [Fact]
+    public void FromConfiguration_EnabledWithHttpMetadataAddressWhileRequiringHttpsMetadata_Throws()
+    {
+        // Authority itself stays https here - it's the metadata address's own scheme that matters
+        // once it's set, not Authority's.
+        var configuration = Configure(new()
+        {
+            ["Keycloak:Enabled"] = "true",
+            ["Keycloak:Authority"] = "https://keycloak.example/realms/blogdoft",
+            ["Keycloak:MetadataAddress"] = "http://keycloak.internal.svc.cluster.local:8080/realms/blogdoft/.well-known/openid-configuration",
+        });
+
+        var exception = Should.Throw<InvalidOperationException>(() => KeycloakOptions.FromConfiguration(configuration));
+
+        exception.Message.ShouldContain("Keycloak:MetadataAddress");
+        exception.Message.ShouldContain("RequireHttpsMetadata");
+    }
+
+    [Fact]
+    public void FromConfiguration_EnabledWithHttpMetadataAddressWithoutRequiringHttpsMetadata_ReturnsOptions()
+    {
+        var configuration = Configure(new()
+        {
+            ["Keycloak:Enabled"] = "true",
+            ["Keycloak:Authority"] = "https://keycloak.example/realms/blogdoft",
+            ["Keycloak:MetadataAddress"] = "http://keycloak.internal.svc.cluster.local:8080/realms/blogdoft/.well-known/openid-configuration",
+            ["Keycloak:RequireHttpsMetadata"] = "false",
+        });
+
+        var options = KeycloakOptions.FromConfiguration(configuration);
+
+        options.ShouldNotBeNull();
+        options.Authority.ShouldBe("https://keycloak.example/realms/blogdoft");
+        options.MetadataAddress.ShouldBe("http://keycloak.internal.svc.cluster.local:8080/realms/blogdoft/.well-known/openid-configuration");
     }
 
     private static IConfiguration Configure(Dictionary<string, string?> values) =>

@@ -22,6 +22,18 @@ public sealed class KeycloakOptions
     /// <value>When set, the token's <c>aud</c> claim must contain this value; when empty, the audience is not validated.</value>
     public string Audience { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets an optional override for where the OIDC discovery document/JWKS are fetched from.</summary>
+    /// <value>
+    /// When set, the JWT bearer handler fetches metadata from this URL instead of deriving it from
+    /// <see cref="Authority"/> - letting that fetch go over a different network path (e.g. a
+    /// plain-HTTP, in-cluster Keycloak Service the container already reaches, bypassing a private CA
+    /// its trust store doesn't have) than the public <see cref="Authority"/>, which keeps validating
+    /// issuer/audience/signature exactly as before and still doubles as the Swagger "Authorize"
+    /// button's login endpoint. Left empty (the default), metadata is fetched from
+    /// <see cref="Authority"/> itself, subject to <see cref="RequireHttpsMetadata"/>.
+    /// </value>
+    public string MetadataAddress { get; set; } = string.Empty;
+
     /// <summary>Gets or sets the Keycloak client this application is registered as, which Swagger UI's "Authorize" button also logs in with.</summary>
     /// <value>The <c>client_id</c> of a public realm client (authorization code + PKCE) shared by the API and Swagger UI; when empty, Swagger UI only accepts a pasted token.</value>
     public string ClientId { get; set; } = string.Empty;
@@ -48,6 +60,7 @@ public sealed class KeycloakOptions
         options.Authority = Normalize(options.Authority);
         options.Audience = Normalize(options.Audience);
         options.ClientId = Normalize(options.ClientId);
+        options.MetadataAddress = Normalize(options.MetadataAddress);
 
         if (options.Authority.Length == 0)
         {
@@ -62,7 +75,26 @@ public sealed class KeycloakOptions
                 $"'{SectionName}:Authority' must be an absolute http(s) URL (the realm's URL), but was '{options.Authority}'.");
         }
 
-        if (authority.Scheme == Uri.UriSchemeHttp && options.RequireHttpsMetadata)
+        // When MetadataAddress overrides where metadata is actually fetched from, RequireHttpsMetadata
+        // governs THAT address, not Authority - the JWT bearer handler never fetches from Authority in
+        // that case (see AddKeycloakAuthentication), so an http Authority alongside an https
+        // MetadataAddress (or vice versa) is fine.
+        if (options.MetadataAddress.Length > 0)
+        {
+            if (!Uri.TryCreate(options.MetadataAddress, UriKind.Absolute, out var metadataAddress)
+                || (metadataAddress.Scheme != Uri.UriSchemeHttps && metadataAddress.Scheme != Uri.UriSchemeHttp))
+            {
+                throw new InvalidOperationException(
+                    $"'{SectionName}:MetadataAddress' must be an absolute http(s) URL, but was '{options.MetadataAddress}'.");
+            }
+
+            if (metadataAddress.Scheme == Uri.UriSchemeHttp && options.RequireHttpsMetadata)
+            {
+                throw new InvalidOperationException(
+                    $"'{SectionName}:MetadataAddress' uses plain HTTP while '{SectionName}:RequireHttpsMetadata' is true. Use an HTTPS metadata address, or set RequireHttpsMetadata to false to fetch it over a trusted internal HTTP path.");
+            }
+        }
+        else if (authority.Scheme == Uri.UriSchemeHttp && options.RequireHttpsMetadata)
         {
             throw new InvalidOperationException(
                 $"'{SectionName}:Authority' uses plain HTTP while '{SectionName}:RequireHttpsMetadata' is true. Use an HTTPS authority, or set RequireHttpsMetadata to false for a local Keycloak.");

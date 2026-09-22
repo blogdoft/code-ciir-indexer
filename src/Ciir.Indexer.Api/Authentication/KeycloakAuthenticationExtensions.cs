@@ -25,6 +25,16 @@ public static class KeycloakAuthenticationExtensions
             .AddJwtBearer(bearer =>
             {
                 bearer.Authority = options.Authority;
+
+                // MetadataAddress, when set, overrides *where the JWKS/discovery document come from*
+                // only - Authority stays the public URL used for issuer validation (Keycloak's
+                // discovery document reports its own public issuer no matter which address served
+                // it) and for the Swagger "Authorize" button's login endpoint.
+                if (options.MetadataAddress.Length > 0)
+                {
+                    bearer.MetadataAddress = options.MetadataAddress;
+                }
+
                 bearer.RequireHttpsMetadata = options.RequireHttpsMetadata;
                 bearer.MapInboundClaims = false;
                 bearer.TokenValidationParameters = new TokenValidationParameters

@@ -52,9 +52,20 @@ data:
   # unset to accept any audience. No Secret is needed: validating a token only takes the realm's
   # public keys (JWKS). Realm matches code-ciir-api's configmap; ClientId/Audience are the shared
   # "code-brain" client/audience used across the code-brain apps, not a per-app one.
+  #
+  # MetadataAddress/RequireHttpsMetadata=false: this pod's container image doesn't trust the private
+  # CA that signs keycloak.home.arpa's certificate (nothing in this repo installs it), so fetching
+  # the discovery document/JWKS from the public Authority over HTTPS fails TLS verification. Keycloak
+  # is also reachable in-cluster over plain HTTP via its own Service, and its discovery document
+  # reports the same public issuer ("https://keycloak.home.arpa/realms/k8s") regardless of which
+  # address served it - so fetching metadata from there instead validates tokens exactly the same
+  # way, without installing the CA anywhere. Authority itself is untouched and still stays the public
+  # URL used for issuer validation and the Swagger "Authorize" button.
   Keycloak__Enabled: "true"
   Keycloak__Authority: "https://keycloak.home.arpa/realms/k8s"
   Keycloak__Audience: "code-brain"
+  Keycloak__MetadataAddress: "http://keycloak.keycloak.svc.cluster.local:8080/realms/k8s/.well-known/openid-configuration"
+  Keycloak__RequireHttpsMetadata: "false"
   # Optional: the Keycloak client this application is registered as - a public client (PKCE, no
   # secret) that Swagger UI's Authorize button also logs in with, so the API and Swagger share one
   # client id. See README.md ("Authentication") for the client settings it needs.
