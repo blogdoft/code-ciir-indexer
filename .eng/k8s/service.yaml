@@ -7,8 +7,8 @@ metadata:
     # Traefik a 120s response-header timeout for this backend instead of the default unlimited
     # wait, so slow reranking requests get a bounded, generous ceiling instead of an
     # inconsistent 504 further upstream. The ArgoCD application deploys this service into
-    # code-rag. Format: <namespace>-<serverstransport-name>@kubernetescrd.
-    traefik.ingress.kubernetes.io/service.serverstransport: code-rag-code-ciir-indexer-transport@kubernetescrd
+    # code-brain. Format: <namespace>-<serverstransport-name>@kubernetescrd.
+    traefik.ingress.kubernetes.io/service.serverstransport: code-brain-code-ciir-indexer-transport@kubernetescrd
 spec:
   selector:
     app: code-ciir-indexer

@@ -7,7 +7,7 @@
 # code-ciir-indexer-strip-code-brain Middleware (middleware.yaml) before forwarding, since the
 # backend's controllers are rooted at "api/indexer/..." (see Ciir.Indexer.Api Controllers) with no
 # "code-brain" segment. Format for router.middlewares: <namespace>-<middleware-name>@kubernetescrd
-# (this Ingress is deployed into code-rag - see service.yaml's serverstransport annotation).
+# (this Ingress is deployed into code-brain - see service.yaml's serverstransport annotation).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -15,7 +15,7 @@ metadata:
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
     traefik.ingress.kubernetes.io/router.tls: "true"
-    traefik.ingress.kubernetes.io/router.middlewares: code-rag-code-ciir-indexer-strip-code-brain@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: code-brain-code-ciir-indexer-strip-code-brain@kubernetescrd
 spec:
   ingressClassName: traefik
   rules:
