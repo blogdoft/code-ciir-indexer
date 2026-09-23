@@ -139,14 +139,14 @@ jobs:
           WORKDIR=$(mktemp -d)
           git clone --depth 1 ssh://git@forgejo.home.arpa:2222/sauron/argo-local-apps.git "$WORKDIR"
 
-          rm -rf "$WORKDIR/manifests/code-ciir-indexer"
-          mkdir -p "$WORKDIR/manifests/code-ciir-indexer"
-          cp -r .eng/k8s/. "$WORKDIR/manifests/code-ciir-indexer/"
+          rm -rf "$WORKDIR/manifests/code-brain/code-ciir-indexer"
+          mkdir -p "$WORKDIR/manifests/code-brain/code-ciir-indexer"
+          cp -r .eng/k8s/. "$WORKDIR/manifests/code-brain/code-ciir-indexer/"
 
           cd "$WORKDIR"
           git config user.name "code-ciir-ci"
           git config user.email "ci@code-ciir.local"
-          git add manifests/code-ciir-indexer
+          git add manifests/code-brain/code-ciir-indexer
 
           if git diff --cached --quiet; then
             echo "No manifest changes, skipping commit."
