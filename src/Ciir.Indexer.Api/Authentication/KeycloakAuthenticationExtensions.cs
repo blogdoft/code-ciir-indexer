@@ -37,6 +37,20 @@ public static class KeycloakAuthenticationExtensions
 
                 bearer.RequireHttpsMetadata = options.RequireHttpsMetadata;
                 bearer.MapInboundClaims = false;
+
+                // See KeycloakOptions.SkipCertificateValidation: only needed when the JWKS host's CA
+                // isn't trusted by this container and that trust can't be fixed directly (yet).
+                if (options.SkipCertificateValidation)
+                {
+#pragma warning disable S4830 // deliberate, opt-in via SkipCertificateValidation - see KeycloakOptions
+                    bearer.BackchannelHttpHandler = new HttpClientHandler
+                    {
+                        ServerCertificateCustomValidationCallback =
+                            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
+                    };
+#pragma warning restore S4830
+                }
+
                 bearer.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateAudience = options.Audience.Length > 0,

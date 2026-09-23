@@ -42,6 +42,22 @@ public sealed class KeycloakOptions
     /// <value><see langword="true"/> (the default) to require HTTPS; only disable against a local, plain-HTTP Keycloak.</value>
     public bool RequireHttpsMetadata { get; set; } = true;
 
+    /// <summary>
+    /// Gets or sets a value indicating whether TLS certificate errors are ignored when fetching the
+    /// discovery document/JWKS. <see cref="MetadataAddress"/> only redirects *where* that fetch
+    /// happens from - it does not change the JWKS URI Keycloak reports inside the document, which is
+    /// always its own public <see cref="Authority"/> and always HTTPS. So an untrusted CA on that
+    /// public host (e.g. a private/self-signed CA the container doesn't trust) still breaks
+    /// validation even when <see cref="MetadataAddress"/> points at a plain-HTTP, in-cluster path.
+    /// </summary>
+    /// <value>
+    /// <see langword="true"/> to accept any server certificate on that backchannel (equivalent to
+    /// <c>curl -k</c>) - this disables TLS protection against a MITM on that connection, so use it
+    /// only when the alternative (trusting the CA in the container's own store) isn't available yet.
+    /// <see langword="false"/> (the default) keeps normal certificate validation.
+    /// </value>
+    public bool SkipCertificateValidation { get; set; }
+
     /// <summary>Reads the "Keycloak" section and, when authentication is enabled, validates it.</summary>
     /// <param name="configuration">The application configuration.</param>
     /// <returns>The validated options, or <see langword="null"/> when <see cref="Enabled"/> is not set - in which case the rest of the section is neither read nor validated.</returns>

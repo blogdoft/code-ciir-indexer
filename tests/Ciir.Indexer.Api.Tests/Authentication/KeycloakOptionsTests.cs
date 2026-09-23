@@ -112,6 +112,7 @@ public sealed class KeycloakOptionsTests
             ["Keycloak:ClientId"] = " swagger ",
             ["Keycloak:MetadataAddress"] = " http://keycloak.internal.svc.cluster.local:8080/realms/blogdoft/.well-known/openid-configuration ",
             ["Keycloak:RequireHttpsMetadata"] = "false",
+            ["Keycloak:SkipCertificateValidation"] = "true",
         });
 
         var options = KeycloakOptions.FromConfiguration(configuration);
@@ -123,6 +124,22 @@ public sealed class KeycloakOptionsTests
         options.ClientId.ShouldBe("swagger");
         options.MetadataAddress.ShouldBe("http://keycloak.internal.svc.cluster.local:8080/realms/blogdoft/.well-known/openid-configuration");
         options.RequireHttpsMetadata.ShouldBeFalse();
+        options.SkipCertificateValidation.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void FromConfiguration_EnabledWithoutSkipCertificateValidation_DefaultsToFalse()
+    {
+        var configuration = Configure(new()
+        {
+            ["Keycloak:Enabled"] = "true",
+            ["Keycloak:Authority"] = "https://keycloak.example/realms/blogdoft",
+        });
+
+        var options = KeycloakOptions.FromConfiguration(configuration);
+
+        options.ShouldNotBeNull();
+        options.SkipCertificateValidation.ShouldBeFalse();
     }
 
     [Theory]
