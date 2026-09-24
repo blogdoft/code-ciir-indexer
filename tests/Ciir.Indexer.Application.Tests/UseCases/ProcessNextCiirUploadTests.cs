@@ -140,7 +140,8 @@ public sealed class ProcessNextCiirUploadTests
         gitUrl: null,
         gitRawUrl: null,
         EmbeddingModel.Create("bge-m3", 2).Value,
-        id).Value;
+        publicId: Guid.NewGuid(),
+        id: id).Value;
 
     private static IndexingRun BuildRun(long projectId, IndexingStatus status, string? error = null) => IndexingRun.Create(
         Guid.NewGuid(),

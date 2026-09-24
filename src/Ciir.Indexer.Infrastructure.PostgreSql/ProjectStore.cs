@@ -10,9 +10,12 @@ namespace Ciir.Indexer.Infrastructure.PostgreSql;
 /// <inheritdoc cref="IProjectStore" />
 public sealed class ProjectStore : IProjectStore
 {
+    // "id" (the numeric primary key) is deliberately never selected - "public_id" is what
+    // Project.PublicId (and every port/controller/response) actually works with; "id" only ever
+    // flows internally, as the FK value other tables' project_id columns store.
     private const string ResultSet =
         """
-        SELECT id AS "Id", name AS "Name", git_url AS "GitUrl", git_raw_url AS "GitRawUrl",
+        SELECT id AS "Id", public_id AS "PublicId", name AS "Name", git_url AS "GitUrl", git_raw_url AS "GitRawUrl",
             embedding_model AS "EmbeddingModel", embedding_dimensions AS "EmbeddingDimensions",
             created_at AS "CreatedAt", updated_at AS "UpdatedAt"
         FROM projects
@@ -20,20 +23,21 @@ public sealed class ProjectStore : IProjectStore
 
     private const string UpsertSql =
         """
-        INSERT INTO projects (name, git_url, git_raw_url, embedding_model, embedding_dimensions)
-        VALUES (@Name, @GitUrl, @GitRawUrl, @EmbeddingModel, @EmbeddingDimensions)
+        INSERT INTO projects (public_id, name, git_url, git_raw_url, embedding_model, embedding_dimensions)
+        VALUES (@PublicId, @Name, @GitUrl, @GitRawUrl, @EmbeddingModel, @EmbeddingDimensions)
         ON CONFLICT (name) DO UPDATE SET
             git_url = EXCLUDED.git_url,
             git_raw_url = EXCLUDED.git_raw_url,
             embedding_model = EXCLUDED.embedding_model,
             embedding_dimensions = EXCLUDED.embedding_dimensions,
             updated_at = now()
-        RETURNING id AS "Id", name AS "Name", git_url AS "GitUrl", git_raw_url AS "GitRawUrl",
+        RETURNING id AS "Id", public_id AS "PublicId", name AS "Name", git_url AS "GitUrl", git_raw_url AS "GitRawUrl",
             embedding_model AS "EmbeddingModel", embedding_dimensions AS "EmbeddingDimensions",
             created_at AS "CreatedAt", updated_at AS "UpdatedAt";
         """;
 
     private static readonly string GetByIdSql = $"{ResultSet} WHERE id = @Id;";
+    private static readonly string GetByPublicIdSql = $"{ResultSet} WHERE public_id = @PublicId;";
 
     private readonly NpgsqlDataSource _dataSource;
 
@@ -52,6 +56,16 @@ public sealed class ProjectStore : IProjectStore
         return row?.ToDomain();
     }
 
+    public async Task<Project?> GetByPublicIdAsync(Guid publicId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
+
+        var row = await PostgreSqlConnections.ExecuteAsync(() => connection.QuerySingleOrDefaultAsync<ProjectRow?>(
+            new CommandDefinition(GetByPublicIdSql, new { PublicId = publicId }, cancellationToken: cancellationToken)));
+
+        return row?.ToDomain();
+    }
+
     public async Task<Project> EnsureProjectAsync(
         string name,
         string? gitUrl,
@@ -66,6 +80,9 @@ public sealed class ProjectStore : IProjectStore
                 UpsertSql,
                 new
                 {
+                    // Discarded when the row already exists (ON CONFLICT DO UPDATE never touches
+                    // public_id), so the project keeps the public_id it was first created with.
+                    PublicId = Guid.CreateVersion7(),
                     Name = name,
                     GitUrl = gitUrl,
                     GitRawUrl = gitRawUrl,
@@ -130,9 +147,9 @@ public sealed class ProjectStore : IProjectStore
     {
         const string Sql =
             """
-            INSERT INTO projects (name, git_url, git_raw_url, embedding_model, embedding_dimensions)
-            VALUES (@Name, @GitUrl, @GitRawUrl, @EmbeddingModel, @EmbeddingDimensions)
-            RETURNING id AS "Id", name AS "Name", git_url AS "GitUrl", git_raw_url AS "GitRawUrl",
+            INSERT INTO projects (public_id, name, git_url, git_raw_url, embedding_model, embedding_dimensions)
+            VALUES (@PublicId, @Name, @GitUrl, @GitRawUrl, @EmbeddingModel, @EmbeddingDimensions)
+            RETURNING id AS "Id", public_id AS "PublicId", name AS "Name", git_url AS "GitUrl", git_raw_url AS "GitRawUrl",
                 embedding_model AS "EmbeddingModel", embedding_dimensions AS "EmbeddingDimensions",
                 created_at AS "CreatedAt", updated_at AS "UpdatedAt";
             """;
@@ -144,6 +161,7 @@ public sealed class ProjectStore : IProjectStore
                 Sql,
                 new
                 {
+                    PublicId = Guid.CreateVersion7(),
                     Name = name,
                     GitUrl = gitUrl,
                     GitRawUrl = gitRawUrl,
@@ -173,7 +191,7 @@ public sealed class ProjectStore : IProjectStore
                 embedding_dimensions = @EmbeddingDimensions,
                 updated_at = now()
             WHERE id = @Id
-            RETURNING id AS "Id", name AS "Name", git_url AS "GitUrl", git_raw_url AS "GitRawUrl",
+            RETURNING id AS "Id", public_id AS "PublicId", name AS "Name", git_url AS "GitUrl", git_raw_url AS "GitRawUrl",
                 embedding_model AS "EmbeddingModel", embedding_dimensions AS "EmbeddingDimensions",
                 created_at AS "CreatedAt", updated_at AS "UpdatedAt";
             """;
@@ -210,6 +228,7 @@ public sealed class ProjectStore : IProjectStore
 
     private sealed record ProjectRow(
         long Id,
+        Guid PublicId,
         string Name,
         string? GitUrl,
         string? GitRawUrl,
@@ -226,6 +245,7 @@ public sealed class ProjectStore : IProjectStore
             GitUrl,
             GitRawUrl,
             global::Ciir.Indexer.Core.EmbeddingModel.Create(EmbeddingModel, EmbeddingDimensions).Value,
+            PublicId,
             Id,
             DateTime.SpecifyKind(CreatedAt, DateTimeKind.Utc),
             DateTime.SpecifyKind(UpdatedAt, DateTimeKind.Utc)).Value;

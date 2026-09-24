@@ -89,7 +89,8 @@ public sealed class ListProjectsTests
         gitUrl: null,
         gitRawUrl: null,
         EmbeddingModel.Create("bge-m3", 1024).Value,
-        id).Value;
+        publicId: Guid.NewGuid(),
+        id: id).Value;
 
     private ListProjects CreateSut() => new(_projectStore);
 }

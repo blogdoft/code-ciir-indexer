@@ -19,7 +19,11 @@ public sealed record Project
     {
     }
 
+    /// <summary>The internal, auto-incrementing primary key. Never exposed outside this service - see <see cref="PublicId"/>.</summary>
     public long Id { get; init; }
+
+    /// <summary>The identifier exposed to API callers in place of <see cref="Id"/>.</summary>
+    public required Guid PublicId { get; init; }
 
     public required string Name { get; init; }
 
@@ -38,7 +42,8 @@ public sealed record Project
     /// <param name="gitUrl">The project's git repository URL, if supplied by the caller.</param>
     /// <param name="gitRawUrl">The project's git raw-content URL, if supplied by the caller.</param>
     /// <param name="embeddingModel">The embedding model/dimensions currently configured for it.</param>
-    /// <param name="id">The persisted id, or 0 for a project not yet persisted.</param>
+    /// <param name="publicId">The identifier exposed to API callers in place of the internal id.</param>
+    /// <param name="id">The persisted internal id, or 0 for a project not yet persisted.</param>
     /// <param name="createdAt">The persisted creation timestamp, or null to stamp the current time.</param>
     /// <param name="updatedAt">The persisted last-update timestamp, or null to stamp the current time.</param>
     public static Result<Project> Create(
@@ -46,6 +51,7 @@ public sealed record Project
         string? gitUrl,
         string? gitRawUrl,
         EmbeddingModel embeddingModel,
+        Guid publicId,
         long id = 0,
         DateTime? createdAt = null,
         DateTime? updatedAt = null)
@@ -54,6 +60,7 @@ public sealed record Project
         var candidate = new Project
         {
             Id = id,
+            PublicId = publicId,
             Name = name ?? string.Empty,
             GitUrl = gitUrl,
             GitRawUrl = gitRawUrl,

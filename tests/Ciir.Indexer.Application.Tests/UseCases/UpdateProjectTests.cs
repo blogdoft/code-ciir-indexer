@@ -15,13 +15,13 @@ public sealed class UpdateProjectTests
     {
         var existing = BuildProject();
         var updated = existing with { Name = "renamed" };
-        _projectStore.GetByIdAsync(existing.Id, Arg.Any<CancellationToken>()).Returns(existing);
+        _projectStore.GetByPublicIdAsync(existing.PublicId, Arg.Any<CancellationToken>()).Returns(existing);
         _projectStore.ExistsByNameAsync("renamed", existing.Id, Arg.Any<CancellationToken>()).Returns(false);
         _projectStore
             .UpdateAsync(existing.Id, "renamed", null, null, Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>())
             .Returns(updated);
 
-        var result = await CreateSut().ExecuteAsync(existing.Id, "renamed", "bge-m3", 1024, null, null);
+        var result = await CreateSut().ExecuteAsync(existing.PublicId, "renamed", "bge-m3", 1024, null, null);
 
         result.IsSuccess.ShouldBeTrue();
         result.Value.ShouldBe(updated);
@@ -30,9 +30,10 @@ public sealed class UpdateProjectTests
     [Fact]
     public async Task ExecuteAsync_MissingProject_ReturnsProjectNotFound()
     {
-        _projectStore.GetByIdAsync(999, Arg.Any<CancellationToken>()).Returns((Project?)null);
+        var missingId = Guid.NewGuid();
+        _projectStore.GetByPublicIdAsync(missingId, Arg.Any<CancellationToken>()).Returns((Project?)null);
 
-        var result = await CreateSut().ExecuteAsync(999, "proj", "bge-m3", 1024, null, null);
+        var result = await CreateSut().ExecuteAsync(missingId, "proj", "bge-m3", 1024, null, null);
 
         result.IsFailure.ShouldBeTrue();
         result.Failure.Code.ShouldBe("404-project-not-found");
@@ -42,10 +43,10 @@ public sealed class UpdateProjectTests
     public async Task ExecuteAsync_NameUsedByAnotherProject_ReturnsNameConflict()
     {
         var existing = BuildProject();
-        _projectStore.GetByIdAsync(existing.Id, Arg.Any<CancellationToken>()).Returns(existing);
+        _projectStore.GetByPublicIdAsync(existing.PublicId, Arg.Any<CancellationToken>()).Returns(existing);
         _projectStore.ExistsByNameAsync("taken", existing.Id, Arg.Any<CancellationToken>()).Returns(true);
 
-        var result = await CreateSut().ExecuteAsync(existing.Id, "taken", "bge-m3", 1024, null, null);
+        var result = await CreateSut().ExecuteAsync(existing.PublicId, "taken", "bge-m3", 1024, null, null);
 
         result.IsFailure.ShouldBeTrue();
         result.Failure.Code.ShouldBe("409-name-conflict");
@@ -56,11 +57,11 @@ public sealed class UpdateProjectTests
     [InlineData("")]
     public async Task ExecuteAsync_MissingName_ReturnsNameRequired(string? name)
     {
-        var result = await CreateSut().ExecuteAsync(1, name, "bge-m3", 1024, null, null);
+        var result = await CreateSut().ExecuteAsync(Guid.NewGuid(), name, "bge-m3", 1024, null, null);
 
         result.IsFailure.ShouldBeTrue();
         result.Failure.Code.ShouldBe("400-name-required");
-        await _projectStore.DidNotReceive().GetByIdAsync(Arg.Any<long>(), Arg.Any<CancellationToken>());
+        await _projectStore.DidNotReceive().GetByPublicIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 
     private static Project BuildProject() => Project.Create(
@@ -68,6 +69,7 @@ public sealed class UpdateProjectTests
         gitUrl: null,
         gitRawUrl: null,
         EmbeddingModel.Create("bge-m3", 1024).Value,
+        publicId: Guid.NewGuid(),
         id: 1).Value;
 
     private UpdateProject CreateSut() => new(_projectStore);

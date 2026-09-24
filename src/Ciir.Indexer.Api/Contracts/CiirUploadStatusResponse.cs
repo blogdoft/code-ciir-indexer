@@ -18,7 +18,7 @@ namespace Ciir.Indexer.Api.Contracts;
 /// <param name="Error">A human-readable failure message when <paramref name="Status"/> is <c>"failed"</c>; <c>null</c> otherwise.</param>
 public sealed record CiirUploadStatusResponse(
     Guid Id,
-    long ProjectId,
+    Guid ProjectId,
     string Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset? ProcessingStartedAt,

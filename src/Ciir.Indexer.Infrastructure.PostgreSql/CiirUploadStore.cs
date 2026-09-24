@@ -11,16 +11,18 @@ public sealed class CiirUploadStore : ICiirUploadStore
     // Dapper matches positional record constructor parameters to column names case-insensitively
     // but does NOT strip underscores the way it does for settable properties, so every column that
     // materializes into CiirUploadRow needs an explicit alias matching the parameter name exactly.
+    // "id" (the numeric primary key) is deliberately never selected here - "public_id" is what
+    // CiirUpload.Id (and every port/controller) actually works with.
     private const string UploadColumns =
         """
-        id AS "Id", project_id AS "ProjectId", bucket AS "Bucket", object_key AS "ObjectKey", status AS "Status",
+        public_id AS "Id", project_id AS "ProjectId", bucket AS "Bucket", object_key AS "ObjectKey", status AS "Status",
         created_at AS "CreatedAt", processing_started_at AS "ProcessingStartedAt", processed_at AS "ProcessedAt",
         retry_count AS "RetryCount", error AS "Error", indexing_run_id AS "IndexingRunId"
         """;
 
     private const string CreateSql =
         $"""
-        INSERT INTO ciir_uploads (id, project_id, bucket, object_key, status, created_at)
+        INSERT INTO ciir_uploads (public_id, project_id, bucket, object_key, status, created_at)
         VALUES (@Id, @ProjectId, @Bucket, @ObjectKey, @Status, @CreatedAt)
         RETURNING {UploadColumns};
         """;
@@ -50,7 +52,7 @@ public sealed class CiirUploadStore : ICiirUploadStore
             retry_count = CASE WHEN u.status = 'processing' THEN u.retry_count + 1 ELSE u.retry_count END
         FROM next_upload
         WHERE u.id = next_upload.id
-        RETURNING u.id AS "Id", u.project_id AS "ProjectId", u.bucket AS "Bucket", u.object_key AS "ObjectKey",
+        RETURNING u.public_id AS "Id", u.project_id AS "ProjectId", u.bucket AS "Bucket", u.object_key AS "ObjectKey",
             u.status AS "Status", u.created_at AS "CreatedAt", u.processing_started_at AS "ProcessingStartedAt",
             u.processed_at AS "ProcessedAt", u.retry_count AS "RetryCount", u.error AS "Error",
             u.indexing_run_id AS "IndexingRunId";
@@ -70,23 +72,23 @@ public sealed class CiirUploadStore : ICiirUploadStore
 
     private const string MarkIndexingRunSql =
         """
-        UPDATE ciir_uploads SET indexing_run_id = @IndexingRunId WHERE id = @UploadId;
+        UPDATE ciir_uploads SET indexing_run_id = @IndexingRunId WHERE public_id = @UploadId;
         """;
 
     private const string MarkProcessedSql =
         """
-        UPDATE ciir_uploads SET status = 'processed', processed_at = now() WHERE id = @UploadId;
+        UPDATE ciir_uploads SET status = 'processed', processed_at = now() WHERE public_id = @UploadId;
         """;
 
     private const string MarkFailedSql =
         """
-        UPDATE ciir_uploads SET status = 'failed', processed_at = now(), error = @Error WHERE id = @UploadId;
+        UPDATE ciir_uploads SET status = 'failed', processed_at = now(), error = @Error WHERE public_id = @UploadId;
         """;
 
     private const string GetSql =
         $"""
         SELECT {UploadColumns}
-        FROM ciir_uploads WHERE id = @UploadId;
+        FROM ciir_uploads WHERE public_id = @UploadId;
         """;
 
     private readonly NpgsqlDataSource _dataSource;
@@ -106,7 +108,7 @@ public sealed class CiirUploadStore : ICiirUploadStore
                 CreateSql,
                 new
                 {
-                    Id = Guid.NewGuid(),
+                    Id = Guid.CreateVersion7(),
                     ProjectId = projectId,
                     Bucket = bucket,
                     ObjectKey = objectKey,

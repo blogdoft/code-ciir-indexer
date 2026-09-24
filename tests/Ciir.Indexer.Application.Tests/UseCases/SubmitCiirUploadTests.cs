@@ -9,6 +9,9 @@ namespace Ciir.Indexer.Application.Tests.UseCases;
 public sealed class SubmitCiirUploadTests
 {
     private const string Bucket = "ciir-uploads";
+    private const long InternalProjectId = 42;
+
+    private static readonly Guid ProjectPublicId = Guid.NewGuid();
 
     private readonly IProjectStore _projectStore = Substitute.For<IProjectStore>();
     private readonly IObjectStorage _objectStorage = Substitute.For<IObjectStorage>();
@@ -19,14 +22,14 @@ public sealed class SubmitCiirUploadTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    [InlineData("not-a-number")]
+    [InlineData("not-a-guid")]
     public async Task ExecuteAsync_InvalidProjectId_FailsBeforeTouchingObjectStorage(string? projectId)
     {
         var result = await CreateSut().ExecuteAsync(projectId, "ciir.jsonl", Stream.Null, contentLength: 10);
 
         result.IsFailure.ShouldBeTrue();
         result.Failure.Code.ShouldBe("400-project-id-required");
-        await _projectStore.DidNotReceive().GetByIdAsync(Arg.Any<long>(), Arg.Any<CancellationToken>());
+        await _projectStore.DidNotReceive().GetByPublicIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
         await _objectStorage.DidNotReceive().UploadAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<long?>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
@@ -34,29 +37,29 @@ public sealed class SubmitCiirUploadTests
     [Fact]
     public async Task ExecuteAsync_WrongExtension_FailsBeforeCheckingTheProject()
     {
-        var result = await CreateSut().ExecuteAsync("1", "ciir.json", Stream.Null, contentLength: 10);
+        var result = await CreateSut().ExecuteAsync(ProjectPublicId.ToString(), "ciir.json", Stream.Null, contentLength: 10);
 
         result.IsFailure.ShouldBeTrue();
         result.Failure.Code.ShouldBe("400-invalid-extension");
-        await _projectStore.DidNotReceive().GetByIdAsync(Arg.Any<long>(), Arg.Any<CancellationToken>());
+        await _projectStore.DidNotReceive().GetByPublicIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task ExecuteAsync_ContentLengthAboveTheLimit_FailsBeforeCheckingTheProject()
     {
-        var result = await CreateSut().ExecuteAsync("1", "ciir.jsonl", Stream.Null, contentLength: 2048);
+        var result = await CreateSut().ExecuteAsync(ProjectPublicId.ToString(), "ciir.jsonl", Stream.Null, contentLength: 2048);
 
         result.IsFailure.ShouldBeTrue();
         result.Failure.Code.ShouldBe("413-file-too-large");
-        await _projectStore.DidNotReceive().GetByIdAsync(Arg.Any<long>(), Arg.Any<CancellationToken>());
+        await _projectStore.DidNotReceive().GetByPublicIdAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task ExecuteAsync_UnknownProject_ReturnsNotFoundWithoutUploading()
     {
-        _projectStore.GetByIdAsync(42, Arg.Any<CancellationToken>()).Returns((Project?)null);
+        _projectStore.GetByPublicIdAsync(ProjectPublicId, Arg.Any<CancellationToken>()).Returns((Project?)null);
 
-        var result = await CreateSut().ExecuteAsync("42", "ciir.jsonl", Stream.Null, contentLength: 10);
+        var result = await CreateSut().ExecuteAsync(ProjectPublicId.ToString(), "ciir.jsonl", Stream.Null, contentLength: 10);
 
         result.IsFailure.ShouldBeTrue();
         result.Failure.Code.ShouldBe("404-project-not-found");
@@ -72,14 +75,15 @@ public sealed class SubmitCiirUploadTests
             gitUrl: null,
             gitRawUrl: null,
             EmbeddingModel.Create("bge-m3", 1024).Value,
-            id: 42).Value;
-        _projectStore.GetByIdAsync(42, Arg.Any<CancellationToken>()).Returns(project);
+            publicId: ProjectPublicId,
+            id: InternalProjectId).Value;
+        _projectStore.GetByPublicIdAsync(ProjectPublicId, Arg.Any<CancellationToken>()).Returns(project);
         using var content = new MemoryStream([1, 2, 3]);
         var upload = CiirUpload.Create(
-            Guid.NewGuid(), 42, Bucket, "abc/ciir.jsonl", CiirUploadStatus.Pending, DateTimeOffset.UtcNow).Value;
-        _uploadStore.CreateAsync(42, Bucket, Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(upload);
+            Guid.NewGuid(), InternalProjectId, Bucket, "abc/ciir.jsonl", CiirUploadStatus.Pending, DateTimeOffset.UtcNow).Value;
+        _uploadStore.CreateAsync(InternalProjectId, Bucket, Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(upload);
 
-        var result = await CreateSut().ExecuteAsync("42", "ciir.jsonl", content, contentLength: 3);
+        var result = await CreateSut().ExecuteAsync(ProjectPublicId.ToString(), "ciir.jsonl", content, contentLength: 3);
 
         result.IsSuccess.ShouldBeTrue();
         result.Value.ShouldBe(upload);

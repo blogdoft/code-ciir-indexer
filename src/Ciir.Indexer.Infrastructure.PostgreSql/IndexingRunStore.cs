@@ -11,9 +11,11 @@ public sealed class IndexingRunStore : IIndexingRunStore
     // Dapper matches positional record constructor parameters to column names case-insensitively
     // but does NOT strip underscores the way it does for settable properties, so every column that
     // materializes into IndexingRunRow needs an explicit alias matching the parameter name exactly.
+    // "id" (the numeric primary key) is deliberately never selected - "public_id" is what
+    // IndexingRun.Id (and every port/controller) actually works with.
     private const string RunColumns =
         """
-        id AS "Id", path AS "Path", project_id AS "ProjectId", status AS "Status", started_at AS "StartedAt",
+        public_id AS "Id", path AS "Path", project_id AS "ProjectId", status AS "Status", started_at AS "StartedAt",
         finished_at AS "FinishedAt",
         documents_processed AS "DocumentsProcessed", documents_inserted AS "DocumentsInserted",
         documents_updated AS "DocumentsUpdated", embeddings_generated AS "EmbeddingsGenerated",
@@ -23,7 +25,7 @@ public sealed class IndexingRunStore : IIndexingRunStore
 
     private const string InsertSql =
         $"""
-        INSERT INTO indexing_runs (id, path, project_id, status, started_at)
+        INSERT INTO indexing_runs (public_id, path, project_id, status, started_at)
         VALUES (@Id, @Path, @ProjectId, @Status, @StartedAt)
         RETURNING {RunColumns};
         """;
@@ -39,7 +41,7 @@ public sealed class IndexingRunStore : IIndexingRunStore
             relations_processed = @RelationsProcessed,
             relations_resolved = @RelationsResolved,
             relations_unresolved = @RelationsUnresolved
-        WHERE id = @RunId;
+        WHERE public_id = @RunId;
         """;
 
     private const string MarkStatusSql =
@@ -48,13 +50,13 @@ public sealed class IndexingRunStore : IIndexingRunStore
             status = @Status,
             error = @Error,
             finished_at = CASE WHEN @Status IN ('completed', 'failed', 'cancelled') THEN now() ELSE finished_at END
-        WHERE id = @RunId;
+        WHERE public_id = @RunId;
         """;
 
     private const string GetSql =
         $"""
         SELECT {RunColumns}
-        FROM indexing_runs WHERE id = @RunId;
+        FROM indexing_runs WHERE public_id = @RunId;
         """;
 
     private const string ReconcileOrphanedRunsSql =
@@ -64,7 +66,7 @@ public sealed class IndexingRunStore : IIndexingRunStore
             error = 'Process restarted while this run was in progress.',
             finished_at = now()
         WHERE status IN ('pending', 'running', 'resolving_relations')
-        RETURNING id;
+        RETURNING public_id;
         """;
 
     private readonly NpgsqlDataSource _dataSource;
@@ -83,7 +85,7 @@ public sealed class IndexingRunStore : IIndexingRunStore
                 InsertSql,
                 new
                 {
-                    Id = Guid.NewGuid(),
+                    Id = Guid.CreateVersion7(),
                     Path = path,
                     ProjectId = projectId,
                     Status = IndexingStatus.Pending.ToWireString(),

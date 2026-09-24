@@ -57,7 +57,7 @@ public sealed class RegisterCiirUpload
             return Result<CiirUpload>.FromFailure(extensionFailure);
         }
 
-        var project = await _projectStore.GetByIdAsync(parsedProjectId, cancellationToken);
+        var project = await _projectStore.GetByPublicIdAsync(parsedProjectId, cancellationToken);
         if (project is null)
         {
             return Result<CiirUpload>.FromFailure(

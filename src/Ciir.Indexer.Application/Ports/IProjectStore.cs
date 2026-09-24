@@ -29,13 +29,24 @@ public interface IProjectStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Looks up an already-registered project by id (upload spec §3/§9) - unlike
-    /// <see cref="EnsureProjectAsync"/>, this never creates or updates anything.
+    /// Looks up an already-registered project by its internal id (an already-resolved FK value,
+    /// e.g. <see cref="Core.CiirUpload.ProjectId"/>) - unlike <see cref="EnsureProjectAsync"/>, this
+    /// never creates or updates anything. Never call this with a caller-supplied value; see
+    /// <see cref="GetByPublicIdAsync"/> for that.
     /// </summary>
-    /// <param name="id">The project id to look up.</param>
+    /// <param name="id">The project's internal id to look up.</param>
     /// <param name="cancellationToken">Propagates request cancellation.</param>
     /// <returns>The project, or <c>null</c> if no project with this id exists.</returns>
     Task<Project?> GetByIdAsync(long id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Looks up an already-registered project by its public id - the identifier every API caller
+    /// actually supplies (route parameters, <c>projectId</c> form/body fields).
+    /// </summary>
+    /// <param name="publicId">The project's public id to look up.</param>
+    /// <param name="cancellationToken">Propagates request cancellation.</param>
+    /// <returns>The project, or <c>null</c> if no project with this public id exists.</returns>
+    Task<Project?> GetByPublicIdAsync(Guid publicId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Returns a page of projects whose name matches <paramref name="nameFilter"/> (partial,

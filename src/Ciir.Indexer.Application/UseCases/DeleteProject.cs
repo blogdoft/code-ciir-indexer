@@ -17,9 +17,15 @@ public sealed class DeleteProject
         _projectStore = projectStore;
     }
 
-    public async Task<Result<bool>> ExecuteAsync(long id, CancellationToken cancellationToken = default)
+    public async Task<Result<bool>> ExecuteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var deleted = await _projectStore.DeleteAsync(id, cancellationToken);
+        var existing = await _projectStore.GetByPublicIdAsync(id, cancellationToken);
+        if (existing is null)
+        {
+            return ProjectFailures.ProjectNotFound(id);
+        }
+
+        var deleted = await _projectStore.DeleteAsync(existing.Id, cancellationToken);
         return deleted
             ? Result<bool>.FromSuccess(true)
             : ProjectFailures.ProjectNotFound(id);

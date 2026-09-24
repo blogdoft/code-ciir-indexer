@@ -99,6 +99,7 @@ public sealed class CreateProjectTests
         "https://git.example/repo",
         "https://raw.example/repo",
         EmbeddingModel.Create("bge-m3", 1024).Value,
+        publicId: Guid.NewGuid(),
         id: 1).Value;
 
     private CreateProject CreateSut() => new(_projectStore);

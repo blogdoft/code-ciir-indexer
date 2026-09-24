@@ -24,7 +24,7 @@ public static class ProjectFailures
         "400-page-size-invalid",
         $"The 'page_size' query parameter must be between 1 and {maxPageSize}.");
 
-    public static Failure ProjectNotFound(long projectId) => new(
+    public static Failure ProjectNotFound(Guid projectId) => new(
         "404-project-not-found",
         $"No project exists with id {projectId}.");
 

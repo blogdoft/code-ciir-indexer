@@ -67,7 +67,7 @@ public sealed class SubmitCiirUpload
                 new Failure("413-file-too-large", $"The file exceeds the maximum allowed size of {_options.MaxCiirFileSizeBytes} bytes."));
         }
 
-        var project = await _projectStore.GetByIdAsync(parsedProjectId, cancellationToken);
+        var project = await _projectStore.GetByPublicIdAsync(parsedProjectId, cancellationToken);
         if (project is null)
         {
             return Result<CiirUpload>.FromFailure(

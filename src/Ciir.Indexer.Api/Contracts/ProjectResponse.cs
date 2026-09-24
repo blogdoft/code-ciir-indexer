@@ -10,7 +10,7 @@ namespace Ciir.Indexer.Api.Contracts;
 /// <param name="CreatedAt">When the project was first created.</param>
 /// <param name="UpdatedAt">When the project was last updated.</param>
 public sealed record ProjectResponse(
-    long Id,
+    Guid Id,
     string Name,
     string EmbeddingModel,
     int EmbeddingDimensions,

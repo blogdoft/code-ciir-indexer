@@ -17,6 +17,8 @@ public sealed class CiirUploadsControllerTests
     private const long ExistingProjectId = 42;
     private const string Bucket = "ciir-uploads";
 
+    private static readonly Guid ExistingProjectPublicId = Guid.NewGuid();
+
     private readonly IProjectStore _projectStore = Substitute.For<IProjectStore>();
     private readonly IObjectStorage _objectStorage = Substitute.For<IObjectStorage>();
     private readonly ICiirUploadStore _uploadStore = Substitute.For<ICiirUploadStore>();
@@ -24,14 +26,15 @@ public sealed class CiirUploadsControllerTests
 
     public CiirUploadsControllerTests()
     {
-        _projectStore
-            .GetByIdAsync(ExistingProjectId, Arg.Any<CancellationToken>())
-            .Returns(Project.Create(
-                "MyProject",
-                gitUrl: null,
-                gitRawUrl: null,
-                EmbeddingModel.Create("bge-m3", 1024).Value,
-                id: ExistingProjectId).Value);
+        var project = Project.Create(
+            "MyProject",
+            gitUrl: null,
+            gitRawUrl: null,
+            EmbeddingModel.Create("bge-m3", 1024).Value,
+            publicId: ExistingProjectPublicId,
+            id: ExistingProjectId).Value;
+        _projectStore.GetByPublicIdAsync(ExistingProjectPublicId, Arg.Any<CancellationToken>()).Returns(project);
+        _projectStore.GetByIdAsync(ExistingProjectId, Arg.Any<CancellationToken>()).Returns(project);
 
         // A real IObjectStorage adapter reads the stream through to completion, which is exactly
         // what makes SizeLimitedStream's mid-stream size check fire - a substitute that never
@@ -49,7 +52,7 @@ public sealed class CiirUploadsControllerTests
     {
         var upload = BuildUpload();
         _uploadStore.CreateAsync(ExistingProjectId, Bucket, Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(upload);
-        var context = BuildMultipartHttpContext(projectId: "42", fileName: "ciir.jsonl", fileContent: "content"u8.ToArray());
+        var context = BuildMultipartHttpContext(projectId: ExistingProjectPublicId.ToString(), fileName: "ciir.jsonl", fileContent: "content"u8.ToArray());
 
         var result = await CreateSut(context).UploadAsync(CancellationToken.None);
 
@@ -75,7 +78,7 @@ public sealed class CiirUploadsControllerTests
     [Fact]
     public async Task UploadAsync_MissingCiirFilePart_ReturnsBadRequest()
     {
-        var context = BuildMultipartHttpContext(projectId: "42", fileName: null, fileContent: null, includeFilePart: false);
+        var context = BuildMultipartHttpContext(projectId: ExistingProjectPublicId.ToString(), fileName: null, fileContent: null, includeFilePart: false);
 
         var result = await CreateSut(context).UploadAsync(CancellationToken.None);
 
@@ -86,7 +89,7 @@ public sealed class CiirUploadsControllerTests
     [Fact]
     public async Task UploadAsync_UnknownProject_ReturnsNotFoundWithoutStoringAnything()
     {
-        var context = BuildMultipartHttpContext(projectId: "999", fileName: "ciir.jsonl", fileContent: "content"u8.ToArray());
+        var context = BuildMultipartHttpContext(projectId: Guid.NewGuid().ToString(), fileName: "ciir.jsonl", fileContent: "content"u8.ToArray());
 
         var result = await CreateSut(context).UploadAsync(CancellationToken.None);
 
@@ -98,7 +101,7 @@ public sealed class CiirUploadsControllerTests
     [Fact]
     public async Task UploadAsync_WrongExtension_ReturnsBadRequest()
     {
-        var context = BuildMultipartHttpContext(projectId: "42", fileName: "ciir.json", fileContent: "content"u8.ToArray());
+        var context = BuildMultipartHttpContext(projectId: ExistingProjectPublicId.ToString(), fileName: "ciir.json", fileContent: "content"u8.ToArray());
 
         var result = await CreateSut(context).UploadAsync(CancellationToken.None);
 
@@ -110,7 +113,7 @@ public sealed class CiirUploadsControllerTests
     public async Task UploadAsync_FileLargerThanTheConfiguredLimit_ReturnsPayloadTooLarge()
     {
         var oversized = new byte[_options.MaxCiirFileSizeBytes + 1];
-        var context = BuildMultipartHttpContext(projectId: "42", fileName: "ciir.jsonl", fileContent: oversized);
+        var context = BuildMultipartHttpContext(projectId: ExistingProjectPublicId.ToString(), fileName: "ciir.jsonl", fileContent: oversized);
 
         var result = await CreateSut(context).UploadAsync(CancellationToken.None);
 
@@ -139,7 +142,7 @@ public sealed class CiirUploadsControllerTests
         _uploadStore.CreateAsync(ExistingProjectId, Bucket, "already-uploaded/ciir.jsonl", Arg.Any<CancellationToken>()).Returns(upload);
 
         var result = await CreateSut(new DefaultHttpContext())
-            .RegisterAsync(new RegisterCiirUploadRequest("42", "already-uploaded/ciir.jsonl"), CancellationToken.None);
+            .RegisterAsync(new RegisterCiirUploadRequest(ExistingProjectPublicId.ToString(), "already-uploaded/ciir.jsonl"), CancellationToken.None);
 
         var accepted = result.ShouldBeOfType<AcceptedResult>();
         var body = accepted.Value.ShouldBeOfType<SubmitCiirUploadResponse>();
@@ -153,7 +156,7 @@ public sealed class CiirUploadsControllerTests
         _objectStorage.ExistsAsync(Bucket, "missing/ciir.jsonl", Arg.Any<CancellationToken>()).Returns(false);
 
         var result = await CreateSut(new DefaultHttpContext())
-            .RegisterAsync(new RegisterCiirUploadRequest("42", "missing/ciir.jsonl"), CancellationToken.None);
+            .RegisterAsync(new RegisterCiirUploadRequest(ExistingProjectPublicId.ToString(), "missing/ciir.jsonl"), CancellationToken.None);
 
         result.ShouldBeOfType<NotFoundResult>();
         await _uploadStore.DidNotReceive().CreateAsync(
@@ -164,7 +167,7 @@ public sealed class CiirUploadsControllerTests
     public async Task RegisterAsync_UnknownProject_ReturnsNotFoundWithoutCheckingTheObject()
     {
         var result = await CreateSut(new DefaultHttpContext())
-            .RegisterAsync(new RegisterCiirUploadRequest("999", "already-uploaded/ciir.jsonl"), CancellationToken.None);
+            .RegisterAsync(new RegisterCiirUploadRequest(Guid.NewGuid().ToString(), "already-uploaded/ciir.jsonl"), CancellationToken.None);
 
         result.ShouldBeOfType<NotFoundResult>();
         await _objectStorage.DidNotReceive().ExistsAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
@@ -174,7 +177,7 @@ public sealed class CiirUploadsControllerTests
     public async Task RegisterAsync_MissingObjectKey_ReturnsBadRequest()
     {
         var result = await CreateSut(new DefaultHttpContext())
-            .RegisterAsync(new RegisterCiirUploadRequest("42", null), CancellationToken.None);
+            .RegisterAsync(new RegisterCiirUploadRequest(ExistingProjectPublicId.ToString(), null), CancellationToken.None);
 
         var problem = result.ShouldBeOfType<ObjectResult>();
         problem.StatusCode.ShouldBe(StatusCodes.Status400BadRequest);
@@ -184,7 +187,7 @@ public sealed class CiirUploadsControllerTests
     public async Task RegisterAsync_WrongExtension_ReturnsBadRequest()
     {
         var result = await CreateSut(new DefaultHttpContext())
-            .RegisterAsync(new RegisterCiirUploadRequest("42", "already-uploaded/ciir.json"), CancellationToken.None);
+            .RegisterAsync(new RegisterCiirUploadRequest(ExistingProjectPublicId.ToString(), "already-uploaded/ciir.json"), CancellationToken.None);
 
         var problem = result.ShouldBeOfType<ObjectResult>();
         problem.StatusCode.ShouldBe(StatusCodes.Status400BadRequest);
@@ -201,7 +204,7 @@ public sealed class CiirUploadsControllerTests
         var ok = result.ShouldBeOfType<OkObjectResult>();
         var body = ok.Value.ShouldBeOfType<CiirUploadStatusResponse>();
         body.Id.ShouldBe(upload.Id);
-        body.ProjectId.ShouldBe(upload.ProjectId);
+        body.ProjectId.ShouldBe(ExistingProjectPublicId);
         body.Status.ShouldBe("processed");
         body.IndexationId.ShouldBe(upload.IndexingRunId);
     }
@@ -284,7 +287,7 @@ public sealed class CiirUploadsControllerTests
     {
         var submitCiirUpload = new SubmitCiirUpload(_projectStore, _objectStorage, _uploadStore, Bucket, _options);
         var registerCiirUpload = new RegisterCiirUpload(_projectStore, _objectStorage, _uploadStore, Bucket);
-        return new CiirUploadsController(submitCiirUpload, registerCiirUpload, _uploadStore, _options)
+        return new CiirUploadsController(submitCiirUpload, registerCiirUpload, _uploadStore, _projectStore, _options)
         {
             ControllerContext = new ControllerContext { HttpContext = context },
         };

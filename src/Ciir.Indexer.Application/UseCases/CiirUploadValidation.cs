@@ -1,5 +1,4 @@
 using BlogDoFT.Libs.ResultPattern;
-using System.Globalization;
 
 namespace Ciir.Indexer.Application.UseCases;
 
@@ -11,13 +10,11 @@ internal static class CiirUploadValidation
     /// <param name="parsedProjectId">The parsed id, when parsing succeeds.</param>
     /// <param name="failure">A <c>400-project-id-required</c> failure, when parsing fails.</param>
     /// <returns><c>true</c> when <paramref name="projectId"/> parses as a valid id; <c>false</c> otherwise.</returns>
-    public static bool TryParseProjectId(string? projectId, out long parsedProjectId, out Failure? failure)
+    public static bool TryParseProjectId(string? projectId, out Guid parsedProjectId, out Failure? failure)
     {
-        parsedProjectId = 0;
-
-        if (string.IsNullOrWhiteSpace(projectId) ||
-            !long.TryParse(projectId, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsedProjectId))
+        if (string.IsNullOrWhiteSpace(projectId) || !Guid.TryParse(projectId, out parsedProjectId))
         {
+            parsedProjectId = Guid.Empty;
             failure = new Failure("400-project-id-required", "The 'projectId' field is required and must be a valid project id.");
             return false;
         }

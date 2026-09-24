@@ -42,22 +42,26 @@ public sealed class CiirUploadsController : ControllerBase
     private readonly SubmitCiirUpload _submitCiirUpload;
     private readonly RegisterCiirUpload _registerCiirUpload;
     private readonly ICiirUploadStore _uploadStore;
+    private readonly IProjectStore _projectStore;
     private readonly UploadOptions _options;
 
     /// <summary>Initializes a new instance of the <see cref="CiirUploadsController"/> class.</summary>
     /// <param name="submitCiirUpload">Validates the request and stores the uploaded file.</param>
     /// <param name="registerCiirUpload">Validates the request and registers an already-uploaded file.</param>
     /// <param name="uploadStore">Reads back an upload's current status for <see cref="GetAsync"/>.</param>
+    /// <param name="projectStore">Resolves the project's public id for <see cref="GetAsync"/>.</param>
     /// <param name="options">Configures the maximum accepted file size.</param>
     public CiirUploadsController(
         SubmitCiirUpload submitCiirUpload,
         RegisterCiirUpload registerCiirUpload,
         ICiirUploadStore uploadStore,
+        IProjectStore projectStore,
         UploadOptions options)
     {
         _submitCiirUpload = submitCiirUpload;
         _registerCiirUpload = registerCiirUpload;
         _uploadStore = uploadStore;
+        _projectStore = projectStore;
         _options = options;
     }
 
@@ -175,13 +179,20 @@ public sealed class CiirUploadsController : ControllerBase
     public async Task<IActionResult> GetAsync(Guid id, CancellationToken cancellationToken)
     {
         var upload = await _uploadStore.GetAsync(id, cancellationToken);
+        if (upload is null)
+        {
+            return NotFound();
+        }
 
-        return upload is null ? NotFound() : Ok(ToResponse(upload));
+        // upload.ProjectId is the internal FK value - never exposed as-is; translated to the
+        // project's own public id, which the FK constraint guarantees exists.
+        var project = await _projectStore.GetByIdAsync(upload.ProjectId, cancellationToken);
+        return Ok(ToResponse(upload, project!.PublicId));
     }
 
-    private static CiirUploadStatusResponse ToResponse(CiirUpload upload) => new(
+    private static CiirUploadStatusResponse ToResponse(CiirUpload upload, Guid projectPublicId) => new(
         upload.Id,
-        upload.ProjectId,
+        projectPublicId,
         upload.Status.ToWireString(),
         upload.CreatedAt,
         upload.ProcessingStartedAt,

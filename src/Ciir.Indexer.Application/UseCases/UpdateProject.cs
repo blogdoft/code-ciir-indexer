@@ -15,7 +15,7 @@ public sealed class UpdateProject
     }
 
     public async Task<Result<Project>> ExecuteAsync(
-        long id,
+        Guid id,
         string? name,
         string? embeddingModel,
         int? embeddingDimensions,
@@ -29,19 +29,19 @@ public sealed class UpdateProject
             return validation;
         }
 
-        var existing = await _projectStore.GetByIdAsync(id, cancellationToken);
+        var existing = await _projectStore.GetByPublicIdAsync(id, cancellationToken);
         if (existing is null)
         {
             return ProjectFailures.ProjectNotFound(id);
         }
 
-        if (await _projectStore.ExistsByNameAsync(name!, excludingId: id, cancellationToken))
+        if (await _projectStore.ExistsByNameAsync(name!, excludingId: existing.Id, cancellationToken))
         {
             return ProjectFailures.NameConflict(name!);
         }
 
         var updated = await _projectStore.UpdateAsync(
-            id,
+            existing.Id,
             name!,
             gitUrl,
             gitRawUrl,

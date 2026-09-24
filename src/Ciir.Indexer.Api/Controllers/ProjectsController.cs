@@ -91,13 +91,13 @@ public sealed class ProjectsController : ControllerBase
     /// <remarks>Returns a single project by its id.</remarks>
     /// <param name="projectId">
     /// Identifier of the project, corresponding to the id field returned by <c>GET /api/projects</c>.
-    /// Must be a positive 64-bit integer; any other format results in a 400 response.
+    /// Must be a valid GUID; any other format results in a 400 response.
     /// </param>
     /// <param name="cancellationToken">Propagates request cancellation.</param>
     /// <returns>
     /// <c>200 OK</c> with a <see cref="ProjectResponse"/> when <paramref name="projectId"/> is
-    /// known; <c>400</c> Problem Details when it is not a valid positive integer; a body-less
-    /// <c>404</c> otherwise.
+    /// known; <c>400</c> Problem Details when it is not a valid GUID; a body-less <c>404</c>
+    /// otherwise.
     /// </returns>
     [HttpGet("{projectId}", Name = GetProjectRouteName)]
     [ProducesResponseType<ProjectResponse>(StatusCodes.Status200OK, "application/json")]
@@ -105,12 +105,12 @@ public sealed class ProjectsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetAsync(string projectId, CancellationToken cancellationToken)
     {
-        if (!RouteId.TryParsePositive(projectId, "projectId", HttpContext.Request.Path, out var id, out var problem))
+        if (!RouteId.TryParseGuid(projectId, "projectId", HttpContext.Request.Path, out var id, out var problem))
         {
             return problem!;
         }
 
-        var project = await _projectStore.GetByIdAsync(id, cancellationToken);
+        var project = await _projectStore.GetByPublicIdAsync(id, cancellationToken);
 
         return project is null ? NotFound() : Ok(ToResponse(project));
     }
@@ -139,7 +139,7 @@ public sealed class ProjectsController : ControllerBase
             cancellationToken);
 
         return result.Map(
-            onSuccess: project => (IActionResult)CreatedAtRoute(GetProjectRouteName, new { projectId = project.Id }, ToResponse(project)),
+            onSuccess: project => (IActionResult)CreatedAtRoute(GetProjectRouteName, new { projectId = project.PublicId }, ToResponse(project)),
             onFailure: failure => failure.ToActionResult(HttpContext));
     }
 
@@ -147,8 +147,7 @@ public sealed class ProjectsController : ControllerBase
     /// <remarks>Replaces every field of an existing project. This is a full replace (PUT), not a partial patch - every field must be supplied.</remarks>
     /// <param name="projectId">
     /// Identifier of the project to update, corresponding to the id field returned by
-    /// <c>GET /api/projects</c>. Must be a positive 64-bit integer; any other format results in a
-    /// 400 response.
+    /// <c>GET /api/projects</c>. Must be a valid GUID; any other format results in a 400 response.
     /// </param>
     /// <param name="request">The project's new name, embedding model and embedding dimensions.</param>
     /// <param name="cancellationToken">Propagates request cancellation.</param>
@@ -168,7 +167,7 @@ public sealed class ProjectsController : ControllerBase
         [FromBody] ProjectUpdateRequest request,
         CancellationToken cancellationToken)
     {
-        if (!RouteId.TryParsePositive(projectId, "projectId", HttpContext.Request.Path, out var id, out var problem))
+        if (!RouteId.TryParseGuid(projectId, "projectId", HttpContext.Request.Path, out var id, out var problem))
         {
             return problem!;
         }
@@ -194,8 +193,7 @@ public sealed class ProjectsController : ControllerBase
     /// </remarks>
     /// <param name="projectId">
     /// Identifier of the project to delete, corresponding to the id field returned by
-    /// <c>GET /api/projects</c>. Must be a positive 64-bit integer; any other format results in a
-    /// 400 response.
+    /// <c>GET /api/projects</c>. Must be a valid GUID; any other format results in a 400 response.
     /// </param>
     /// <param name="cancellationToken">Propagates request cancellation.</param>
     /// <returns>
@@ -208,7 +206,7 @@ public sealed class ProjectsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> DeleteAsync(string projectId, CancellationToken cancellationToken)
     {
-        if (!RouteId.TryParsePositive(projectId, "projectId", HttpContext.Request.Path, out var id, out var problem))
+        if (!RouteId.TryParseGuid(projectId, "projectId", HttpContext.Request.Path, out var id, out var problem))
         {
             return problem!;
         }
@@ -228,7 +226,7 @@ public sealed class ProjectsController : ControllerBase
         page.TotalPages);
 
     private static ProjectResponse ToResponse(Project project) => new(
-        project.Id,
+        project.PublicId,
         project.Name,
         project.EmbeddingModel.Name,
         project.EmbeddingModel.Dimensions,
