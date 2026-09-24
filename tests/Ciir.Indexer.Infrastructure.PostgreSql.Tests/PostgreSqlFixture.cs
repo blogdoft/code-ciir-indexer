@@ -25,10 +25,11 @@ public sealed class PostgreSqlFixture : IAsyncLifetime
         _container = new PostgreSqlBuilder("pgvector/pgvector:pg16").Build();
         await _container.StartAsync();
 
+        var connectionString = _container.GetConnectionString();
         var services = new ServiceCollection();
         services.AddPostgreSqlPersistence(
-            _container.GetConnectionString(),
-            new IndexerDatabaseOptions { EmbeddingDimensions = EmbeddingDimensions });
+            connectionString,
+            new IndexerDatabaseOptions { EmbeddingDimensions = EmbeddingDimensions, ConnectionString = connectionString });
         _serviceProvider = services.BuildServiceProvider();
 
         await _serviceProvider.GetRequiredService<DatabaseMigrator>().Execute();

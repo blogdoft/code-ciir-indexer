@@ -24,8 +24,8 @@ builder.Logging.AddJsonConsole();
 
 try
 {
-    // "UseLogExporter" is "DoNotUse" (sic - the library's own enum spelling) so OpenTelemetry
-    // doesn't emit a second log stream alongside the structured JSON console logs configured above.
+    // "UseLogExporter" is "DoNotUse" so OpenTelemetry doesn't emit a second log stream alongside
+    // the structured JSON console logs configured above.
     builder.Services.AddOtel(builder.Configuration);
 
     // --- Keycloak authentication (auth spec): opt-in. Null unless "Keycloak:Enabled" is true, in
@@ -74,7 +74,8 @@ try
         ?? throw new InvalidOperationException("Missing required connection string 'Database'.");
 
     builder.Services.AddPostgreSqlPersistence(
-        connectionString, new IndexerDatabaseOptions { EmbeddingDimensions = embeddingOptions.Dimensions });
+        connectionString,
+        new IndexerDatabaseOptions { EmbeddingDimensions = embeddingOptions.Dimensions, ConnectionString = connectionString });
 
     // Warm-up commands run in registration order, so the migrator (registered inside
     // AddPostgreSqlPersistence above) always runs before the reconciler below it.

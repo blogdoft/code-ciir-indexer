@@ -8,4 +8,13 @@ namespace Ciir.Indexer.Infrastructure.PostgreSql;
 public sealed class IndexerDatabaseOptions
 {
     public required int EmbeddingDimensions { get; init; }
+
+    /// <summary>
+    /// The connection string <see cref="Migrations.DatabaseMigrator"/> runs migrations against.
+    /// Kept here (rather than injected as a bare <see cref="string"/>) so DatabaseMigrator can use
+    /// plain constructor injection and be picked up automatically as an
+    /// <c>IWarmUpCommand</c> - a service registered via a factory delegate has no
+    /// <c>ImplementationType</c> for that discovery to find.
+    /// </summary>
+    public required string ConnectionString { get; init; }
 }

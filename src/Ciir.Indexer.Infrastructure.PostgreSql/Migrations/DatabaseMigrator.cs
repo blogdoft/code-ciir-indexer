@@ -31,10 +31,10 @@ public sealed class DatabaseMigrator : IWarmUpCommand
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly string _connectionString;
 
-    public DatabaseMigrator(IServiceScopeFactory scopeFactory, string connectionString)
+    public DatabaseMigrator(IServiceScopeFactory scopeFactory, IndexerDatabaseOptions databaseOptions)
     {
         _scopeFactory = scopeFactory;
-        _connectionString = connectionString;
+        _connectionString = databaseOptions.ConnectionString;
     }
 
     /// <summary>Applies every migration newer than what has already run, under an advisory lock. Idempotent.</summary>
