@@ -63,14 +63,12 @@ public sealed class UpdateProjectTests
         await _projectStore.DidNotReceive().GetByIdAsync(Arg.Any<long>(), Arg.Any<CancellationToken>());
     }
 
-    private static Project BuildProject() => new()
-    {
-        Id = 1,
-        Name = "proj",
-        EmbeddingModel = new EmbeddingModel("bge-m3", 1024),
-        CreatedAt = DateTime.UtcNow,
-        UpdatedAt = DateTime.UtcNow,
-    };
+    private static Project BuildProject() => Project.Create(
+        "proj",
+        gitUrl: null,
+        gitRawUrl: null,
+        EmbeddingModel.Create("bge-m3", 1024).Value,
+        id: 1).Value;
 
     private UpdateProject CreateSut() => new(_projectStore);
 }

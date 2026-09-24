@@ -83,15 +83,8 @@ public sealed class RegisterCiirUploadTests
     {
         _projectStore.GetByIdAsync(42, Arg.Any<CancellationToken>()).Returns(BuildProject());
         _objectStorage.ExistsAsync(Bucket, "abc/ciir.jsonl", Arg.Any<CancellationToken>()).Returns(true);
-        var upload = new CiirUpload
-        {
-            Id = Guid.NewGuid(),
-            ProjectId = 42,
-            Bucket = Bucket,
-            ObjectKey = "abc/ciir.jsonl",
-            Status = CiirUploadStatus.Pending,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
+        var upload = CiirUpload.Create(
+            Guid.NewGuid(), 42, Bucket, "abc/ciir.jsonl", CiirUploadStatus.Pending, DateTimeOffset.UtcNow).Value;
         _uploadStore.CreateAsync(42, Bucket, "abc/ciir.jsonl", Arg.Any<CancellationToken>()).Returns(upload);
 
         var result = await CreateSut().ExecuteAsync("42", "abc/ciir.jsonl");
@@ -102,14 +95,12 @@ public sealed class RegisterCiirUploadTests
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Stream>(), Arg.Any<long?>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
-    private static Project BuildProject() => new()
-    {
-        Id = 42,
-        Name = "MyProject",
-        EmbeddingModel = new EmbeddingModel("bge-m3", 1024),
-        CreatedAt = DateTime.UtcNow,
-        UpdatedAt = DateTime.UtcNow,
-    };
+    private static Project BuildProject() => Project.Create(
+        "MyProject",
+        gitUrl: null,
+        gitRawUrl: null,
+        EmbeddingModel.Create("bge-m3", 1024).Value,
+        id: 42).Value;
 
     private RegisterCiirUpload CreateSut() => new(_projectStore, _objectStorage, _uploadStore, Bucket);
 }

@@ -91,3 +91,7 @@ parameterization, explicit mapping) has to be applied by hand, consistently.
   single-table select) with named parameters (`@paramName`), not positional placeholders — the
   next reader should be able to tell what a query does without cross-referencing the C# call site.
 
+## Primary keys
+
+- Primary key should be numeric (int/bigint) and auto-incrementing, unless there's a reason to use composite keys.
+- To avoid brute force attacks, don't expose the primary key in public APIs. Use a separate unique identifier (e.g. UUID7) for external references.

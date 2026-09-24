@@ -21,7 +21,7 @@ public sealed class ProjectStoreTests
     {
         var name = TestData.NewProjectName();
 
-        var project = await _sut.EnsureProjectAsync(name, null, null, new EmbeddingModel("bge-m3", 1024));
+        var project = await _sut.EnsureProjectAsync(name, null, null, EmbeddingModel.Create("bge-m3", 1024).Value);
 
         project.Id.ShouldBeGreaterThan(0);
         project.Name.ShouldBe(name);
@@ -34,8 +34,8 @@ public sealed class ProjectStoreTests
     {
         var name = TestData.NewProjectName();
 
-        var first = await _sut.EnsureProjectAsync(name, null, null, new EmbeddingModel("bge-m3", 1024));
-        var second = await _sut.EnsureProjectAsync(name, null, null, new EmbeddingModel("bge-m3", 1024));
+        var first = await _sut.EnsureProjectAsync(name, null, null, EmbeddingModel.Create("bge-m3", 1024).Value);
+        var second = await _sut.EnsureProjectAsync(name, null, null, EmbeddingModel.Create("bge-m3", 1024).Value);
 
         second.Id.ShouldBe(first.Id);
     }
@@ -44,9 +44,9 @@ public sealed class ProjectStoreTests
     public async Task EnsureProjectAsync_ModelChanged_UpdatesTheStoredModel()
     {
         var name = TestData.NewProjectName();
-        await _sut.EnsureProjectAsync(name, null, null, new EmbeddingModel("bge-m3", 1024));
+        await _sut.EnsureProjectAsync(name, null, null, EmbeddingModel.Create("bge-m3", 1024).Value);
 
-        var updated = await _sut.EnsureProjectAsync(name, null, null, new EmbeddingModel("nomic-embed-text", 768));
+        var updated = await _sut.EnsureProjectAsync(name, null, null, EmbeddingModel.Create("nomic-embed-text", 768).Value);
 
         updated.EmbeddingModel.Name.ShouldBe("nomic-embed-text");
         updated.EmbeddingModel.Dimensions.ShouldBe(768);
@@ -58,7 +58,7 @@ public sealed class ProjectStoreTests
         var name = TestData.NewProjectName();
 
         var project = await _sut.EnsureProjectAsync(
-            name, "https://git.example/repo", "https://raw.example/repo", new EmbeddingModel("bge-m3", 1024));
+            name, "https://git.example/repo", "https://raw.example/repo", EmbeddingModel.Create("bge-m3", 1024).Value);
 
         project.GitUrl.ShouldBe("https://git.example/repo");
         project.GitRawUrl.ShouldBe("https://raw.example/repo");
@@ -69,10 +69,10 @@ public sealed class ProjectStoreTests
     {
         var name = TestData.NewProjectName();
         await _sut.EnsureProjectAsync(
-            name, "https://git.example/old", "https://raw.example/old", new EmbeddingModel("bge-m3", 1024));
+            name, "https://git.example/old", "https://raw.example/old", EmbeddingModel.Create("bge-m3", 1024).Value);
 
         var updated = await _sut.EnsureProjectAsync(
-            name, "https://git.example/new", "https://raw.example/new", new EmbeddingModel("bge-m3", 1024));
+            name, "https://git.example/new", "https://raw.example/new", EmbeddingModel.Create("bge-m3", 1024).Value);
 
         updated.GitUrl.ShouldBe("https://git.example/new");
         updated.GitRawUrl.ShouldBe("https://raw.example/new");
@@ -83,7 +83,7 @@ public sealed class ProjectStoreTests
     {
         var name = TestData.NewProjectName();
         var created = await _sut.EnsureProjectAsync(
-            name, "https://git.example/repo", "https://raw.example/repo", new EmbeddingModel("bge-m3", 1024));
+            name, "https://git.example/repo", "https://raw.example/repo", EmbeddingModel.Create("bge-m3", 1024).Value);
 
         var found = await _sut.GetByIdAsync(created.Id);
 
@@ -106,7 +106,7 @@ public sealed class ProjectStoreTests
     public async Task SearchAsync_NoFilter_ReturnsMatchingProjectsAndTotalCount()
     {
         var name = TestData.NewProjectName();
-        var created = await _sut.EnsureProjectAsync(name, null, null, new EmbeddingModel("bge-m3", 1024));
+        var created = await _sut.EnsureProjectAsync(name, null, null, EmbeddingModel.Create("bge-m3", 1024).Value);
 
         var (items, totalCount) = await _sut.SearchAsync(name, page: 0, pageSize: 20);
 
@@ -118,9 +118,9 @@ public sealed class ProjectStoreTests
     public async Task SearchAsync_NameFilter_OnlyReturnsMatchingProjects()
     {
         var name = TestData.NewProjectName();
-        await _sut.EnsureProjectAsync(name, null, null, new EmbeddingModel("bge-m3", 1024));
+        await _sut.EnsureProjectAsync(name, null, null, EmbeddingModel.Create("bge-m3", 1024).Value);
         var otherName = TestData.NewProjectName();
-        await _sut.EnsureProjectAsync(otherName, null, null, new EmbeddingModel("bge-m3", 1024));
+        await _sut.EnsureProjectAsync(otherName, null, null, EmbeddingModel.Create("bge-m3", 1024).Value);
 
         var (items, totalCount) = await _sut.SearchAsync(name, page: 0, pageSize: 20);
 
@@ -132,7 +132,7 @@ public sealed class ProjectStoreTests
     public async Task ExistsByNameAsync_ExistingName_ReturnsTrue()
     {
         var name = TestData.NewProjectName();
-        await _sut.EnsureProjectAsync(name, null, null, new EmbeddingModel("bge-m3", 1024));
+        await _sut.EnsureProjectAsync(name, null, null, EmbeddingModel.Create("bge-m3", 1024).Value);
 
         var exists = await _sut.ExistsByNameAsync(name, excludingId: null);
 
@@ -151,7 +151,7 @@ public sealed class ProjectStoreTests
     public async Task ExistsByNameAsync_ExcludingItsOwnId_ReturnsFalse()
     {
         var name = TestData.NewProjectName();
-        var created = await _sut.EnsureProjectAsync(name, null, null, new EmbeddingModel("bge-m3", 1024));
+        var created = await _sut.EnsureProjectAsync(name, null, null, EmbeddingModel.Create("bge-m3", 1024).Value);
 
         var exists = await _sut.ExistsByNameAsync(name, excludingId: created.Id);
 
@@ -164,7 +164,7 @@ public sealed class ProjectStoreTests
         var name = TestData.NewProjectName();
 
         var project = await _sut.InsertAsync(
-            name, "https://git.example/repo", "https://raw.example/repo", new EmbeddingModel("bge-m3", 1024));
+            name, "https://git.example/repo", "https://raw.example/repo", EmbeddingModel.Create("bge-m3", 1024).Value);
 
         project.Id.ShouldBeGreaterThan(0);
         project.Name.ShouldBe(name);
@@ -180,11 +180,11 @@ public sealed class ProjectStoreTests
     public async Task UpdateAsync_ExistingProject_ReplacesEveryFieldAndReturnsIt()
     {
         var created = await _sut.InsertAsync(
-            TestData.NewProjectName(), null, null, new EmbeddingModel("bge-m3", 1024));
+            TestData.NewProjectName(), null, null, EmbeddingModel.Create("bge-m3", 1024).Value);
         var newName = TestData.NewProjectName();
 
         var updated = await _sut.UpdateAsync(
-            created.Id, newName, "https://git.example/new", "https://raw.example/new", new EmbeddingModel("nomic-embed-text", 768));
+            created.Id, newName, "https://git.example/new", "https://raw.example/new", EmbeddingModel.Create("nomic-embed-text", 768).Value);
 
         updated.ShouldNotBeNull();
         updated.Name.ShouldBe(newName);
@@ -198,7 +198,7 @@ public sealed class ProjectStoreTests
     public async Task UpdateAsync_UnknownId_ReturnsNull()
     {
         var updated = await _sut.UpdateAsync(
-            -1, TestData.NewProjectName(), null, null, new EmbeddingModel("bge-m3", 1024));
+            -1, TestData.NewProjectName(), null, null, EmbeddingModel.Create("bge-m3", 1024).Value);
 
         updated.ShouldBeNull();
     }
@@ -207,7 +207,7 @@ public sealed class ProjectStoreTests
     public async Task DeleteAsync_ExistingProject_RemovesItAndReturnsTrue()
     {
         var created = await _sut.InsertAsync(
-            TestData.NewProjectName(), null, null, new EmbeddingModel("bge-m3", 1024));
+            TestData.NewProjectName(), null, null, EmbeddingModel.Create("bge-m3", 1024).Value);
 
         var deleted = await _sut.DeleteAsync(created.Id);
 

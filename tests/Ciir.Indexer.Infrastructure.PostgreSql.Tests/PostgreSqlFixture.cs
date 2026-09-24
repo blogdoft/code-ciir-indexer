@@ -31,7 +31,7 @@ public sealed class PostgreSqlFixture : IAsyncLifetime
             new IndexerDatabaseOptions { EmbeddingDimensions = EmbeddingDimensions });
         _serviceProvider = services.BuildServiceProvider();
 
-        _serviceProvider.GetRequiredService<DatabaseMigrator>().Apply();
+        await _serviceProvider.GetRequiredService<DatabaseMigrator>().Execute();
     }
 
     public async Task DisposeAsync()

@@ -29,7 +29,7 @@ public static class ServiceCollectionExtensions
                 .AddPostgres()
                 .WithGlobalConnectionString(connectionString)
                 .ScanIn(typeof(InitialSchema).Assembly).For.Migrations().For.VersionTableMetaData());
-        services.AddSingleton<DatabaseMigrator>();
+        services.AddSingleton(sp => new DatabaseMigrator(sp.GetRequiredService<IServiceScopeFactory>(), connectionString));
 
         services.AddSingleton<IProjectStore, ProjectStore>();
         services.AddSingleton<ICiirDocumentWriter, CiirDocumentWriter>();

@@ -169,16 +169,14 @@ public sealed class IndexingRunStore : IIndexingRunStore
         long RelationsUnresolved,
         string? Error)
     {
-        public IndexingRun ToDomain() => new()
-        {
-            Id = Id,
-            Path = Path,
-            ProjectId = ProjectId,
-            Status = IndexingStatusExtensions.ParseIndexingStatus(Status),
-            StartedAt = new DateTimeOffset(DateTime.SpecifyKind(StartedAt, DateTimeKind.Utc)),
-            FinishedAt = FinishedAt is { } finishedAt ? new DateTimeOffset(DateTime.SpecifyKind(finishedAt, DateTimeKind.Utc)) : null,
-            Error = Error,
-            Counters = new IndexingCounters
+        public IndexingRun ToDomain() => IndexingRun.Create(
+            Id,
+            Path,
+            ProjectId,
+            IndexingStatusExtensions.ParseIndexingStatus(Status),
+            new DateTimeOffset(DateTime.SpecifyKind(StartedAt, DateTimeKind.Utc)),
+            FinishedAt is { } finishedAt ? new DateTimeOffset(DateTime.SpecifyKind(finishedAt, DateTimeKind.Utc)) : null,
+            new IndexingCounters
             {
                 DocumentsProcessed = DocumentsProcessed,
                 DocumentsInserted = DocumentsInserted,
@@ -189,6 +187,6 @@ public sealed class IndexingRunStore : IIndexingRunStore
                 RelationsResolved = RelationsResolved,
                 RelationsUnresolved = RelationsUnresolved,
             },
-        };
+            Error).Value;
     }
 }

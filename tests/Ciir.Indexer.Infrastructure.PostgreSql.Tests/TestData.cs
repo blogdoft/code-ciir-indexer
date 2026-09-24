@@ -18,11 +18,12 @@ internal static class TestData
     public static CiirIdentity Sha256Identity(string seed)
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(seed));
-        return new CiirIdentity("sha256:" + Convert.ToHexStringLower(hash));
+        return CiirIdentity.Create("sha256:" + Convert.ToHexStringLower(hash)).Value;
     }
 
     public static EmbeddingTextHash NewEmbeddingTextHash() =>
-        new("sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(Guid.NewGuid().ToString()))));
+        EmbeddingTextHash.Create(
+            "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(Guid.NewGuid().ToString())))).Value;
 
     public static CiirDocument BuildDocument(
         CiirIdentity? ciirId = null,

@@ -179,14 +179,12 @@ public sealed class ProjectsControllerTests
         objectResult.StatusCode.ShouldBe(StatusCodes.Status400BadRequest);
     }
 
-    private static Project BuildProject(long id) => new()
-    {
-        Id = id,
-        Name = $"Project{id}",
-        EmbeddingModel = new EmbeddingModel("bge-m3", 1024),
-        CreatedAt = DateTime.UtcNow,
-        UpdatedAt = DateTime.UtcNow,
-    };
+    private static Project BuildProject(long id) => Project.Create(
+        $"Project{id}",
+        gitUrl: null,
+        gitRawUrl: null,
+        EmbeddingModel.Create("bge-m3", 1024).Value,
+        id).Value;
 
     private ProjectsController CreateSut() =>
         new(

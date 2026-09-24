@@ -41,7 +41,7 @@ public sealed class CreateProject
             name!,
             gitUrl,
             gitRawUrl,
-            new EmbeddingModel(embeddingModel!, embeddingDimensions!.Value),
+            EmbeddingModel.Create(embeddingModel!, embeddingDimensions!.Value).Value,
             cancellationToken);
     }
 }

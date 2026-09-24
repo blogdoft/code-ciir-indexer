@@ -38,6 +38,7 @@ framework calls. If a piece of code needs one of those, it doesn't belong here.
 
 - Prefer `record` types for value objects — value equality and immutability come for free, which
   is exactly the semantics a value object needs.
+  - When is applicable, use implicit operator overloads to convert between a value object and its underlying primitive type (e.g. `public static implicit operator string(MyValueObject vo) => vo.Value;`), so the value object can be used interchangeably with the primitive in most places without losing the invariant enforcement.
 - Entities are allowed to be mutable — that's the point of Building Entities, above: their state
   legitimately changes over their lifecycle. But that mutation must go through explicit methods
   that enforce which transitions are legal, never a public property setter anyone can assign from

@@ -125,35 +125,30 @@ public sealed class ProcessNextCiirUploadTests
         Directory.Exists(expectedStagingDirectory).ShouldBeFalse();
     }
 
-    private static CiirUpload BuildUpload(CiirUploadStatus status = CiirUploadStatus.Pending, int retryCount = 0) => new()
-    {
-        Id = Guid.NewGuid(),
-        ProjectId = 42,
-        Bucket = "ciir-uploads",
-        ObjectKey = $"{Guid.NewGuid():N}/ciir.jsonl",
-        Status = status,
-        CreatedAt = DateTimeOffset.UtcNow,
-        RetryCount = retryCount,
-    };
+    private static CiirUpload BuildUpload(CiirUploadStatus status = CiirUploadStatus.Pending, int retryCount = 0) =>
+        CiirUpload.Create(
+            Guid.NewGuid(),
+            42,
+            "ciir-uploads",
+            $"{Guid.NewGuid():N}/ciir.jsonl",
+            status,
+            DateTimeOffset.UtcNow,
+            retryCount: retryCount).Value;
 
-    private static Project BuildProject(long id) => new()
-    {
-        Id = id,
-        Name = "MyProject",
-        EmbeddingModel = new EmbeddingModel("bge-m3", 2),
-        CreatedAt = DateTime.UtcNow,
-        UpdatedAt = DateTime.UtcNow,
-    };
+    private static Project BuildProject(long id) => Project.Create(
+        "MyProject",
+        gitUrl: null,
+        gitRawUrl: null,
+        EmbeddingModel.Create("bge-m3", 2).Value,
+        id).Value;
 
-    private static IndexingRun BuildRun(long projectId, IndexingStatus status, string? error = null) => new()
-    {
-        Id = Guid.NewGuid(),
-        Path = "/tmp/ciir.jsonl",
-        ProjectId = projectId,
-        Status = status,
-        StartedAt = DateTimeOffset.UtcNow,
-        Error = error,
-    };
+    private static IndexingRun BuildRun(long projectId, IndexingStatus status, string? error = null) => IndexingRun.Create(
+        Guid.NewGuid(),
+        "/tmp/ciir.jsonl",
+        projectId,
+        status,
+        DateTimeOffset.UtcNow,
+        error: error).Value;
 
     private static async IAsyncEnumerable<CiirRecordReadResult> EmptyRecords()
     {

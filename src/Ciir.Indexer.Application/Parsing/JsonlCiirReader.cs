@@ -1,3 +1,4 @@
+using BlogDoFT.Libs.ResultPattern;
 using Ciir.Indexer.Application.Ports;
 using Ciir.Indexer.Core;
 using System.Runtime.CompilerServices;
@@ -78,7 +79,7 @@ public sealed class JsonlCiirReader : ICiirJsonlReader
         }
 
         var symbol = MapSymbol(dto.Symbol);
-        var ciirId = new CiirIdentity(dto.Id);
+        var ciirId = RequireValid(CiirIdentity.Create(dto.Id));
         var sourcePath = dto.Source?.Path;
 
         var document = new CiirDocument
@@ -91,7 +92,7 @@ public sealed class JsonlCiirReader : ICiirJsonlReader
             SourcePath = sourcePath,
             EmbeddingText = dto.EmbeddingText,
             EmbeddingTextStrategy = dto.EmbeddingTextStrategy,
-            EmbeddingTextHash = dto.EmbeddingTextHash is { Length: > 0 } hash ? new EmbeddingTextHash(hash) : null,
+            EmbeddingTextHash = dto.EmbeddingTextHash is { Length: > 0 } hash ? RequireValid(EmbeddingTextHash.Create(hash)) : null,
             RawContent = rawLine,
         };
 
@@ -160,7 +161,7 @@ public sealed class JsonlCiirReader : ICiirJsonlReader
         return new CiirRelation
         {
             SourceCiirId = sourceCiirId,
-            TargetCiirId = dto.Target.Id is { Length: > 0 } targetId ? new CiirIdentity(targetId) : null,
+            TargetCiirId = dto.Target.Id is { Length: > 0 } targetId ? RequireValid(CiirIdentity.Create(targetId)) : null,
             Kind = dto.Kind,
             TargetSymbol = dto.Target.Symbol,
             Resolution = MapResolution(dto.Resolution),
@@ -200,4 +201,10 @@ public sealed class JsonlCiirReader : ICiirJsonlReader
         "unknown" => RelationResolutionOrigin.Unknown,
         _ => throw new ArgumentException($"Unrecognized relation resolution origin '{origin}'."),
     };
+
+    // Bridges a domain Result<T> failure into this method's own ArgumentException-based control
+    // flow (see ParseLine's single catch site), rather than threading Result through every
+    // mapping function in this file.
+    private static T RequireValid<T>(Result<T> result) =>
+        result.IsSuccess ? result.Value : throw new ArgumentException(result.Failure.Message);
 }

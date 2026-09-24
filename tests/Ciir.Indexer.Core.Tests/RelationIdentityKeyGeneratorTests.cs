@@ -70,7 +70,7 @@ public sealed class RelationIdentityKeyGeneratorTests
     {
         return new CiirRelation
         {
-            SourceCiirId = new CiirIdentity("sha256:" + new string('a', 64)),
+            SourceCiirId = CiirIdentity.Create("sha256:" + new string('a', 64)).Value,
             TargetCiirId = targetCiirId,
             Kind = kind,
             TargetSymbol = "NS.Type.Member",

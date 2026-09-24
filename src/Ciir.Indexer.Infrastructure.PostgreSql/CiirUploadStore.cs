@@ -200,23 +200,27 @@ public sealed class CiirUploadStore : ICiirUploadStore
         string? Error,
         Guid? IndexingRunId)
     {
-        public CiirUpload ToDomain() => new()
+        public CiirUpload ToDomain()
         {
-            Id = Id,
-            ProjectId = ProjectId,
-            Bucket = Bucket,
-            ObjectKey = ObjectKey,
-            Status = CiirUploadStatusExtensions.ParseCiirUploadStatus(Status),
-            CreatedAt = new DateTimeOffset(DateTime.SpecifyKind(CreatedAt, DateTimeKind.Utc)),
-            ProcessingStartedAt = ProcessingStartedAt is { } processingStartedAt
-                ? new DateTimeOffset(DateTime.SpecifyKind(processingStartedAt, DateTimeKind.Utc))
-                : null,
-            ProcessedAt = ProcessedAt is { } processedAt
-                ? new DateTimeOffset(DateTime.SpecifyKind(processedAt, DateTimeKind.Utc))
-                : null,
-            RetryCount = RetryCount,
-            Error = Error,
-            IndexingRunId = IndexingRunId,
-        };
+            var processingStartedAt = ProcessingStartedAt is { } startedAt
+                ? new DateTimeOffset(DateTime.SpecifyKind(startedAt, DateTimeKind.Utc))
+                : (DateTimeOffset?)null;
+            var processedAt = ProcessedAt is { } finishedAt
+                ? new DateTimeOffset(DateTime.SpecifyKind(finishedAt, DateTimeKind.Utc))
+                : (DateTimeOffset?)null;
+
+            return CiirUpload.Create(
+                Id,
+                ProjectId,
+                Bucket,
+                ObjectKey,
+                CiirUploadStatusExtensions.ParseCiirUploadStatus(Status),
+                new DateTimeOffset(DateTime.SpecifyKind(CreatedAt, DateTimeKind.Utc)),
+                processingStartedAt,
+                processedAt,
+                RetryCount,
+                Error,
+                IndexingRunId).Value;
+        }
     }
 }

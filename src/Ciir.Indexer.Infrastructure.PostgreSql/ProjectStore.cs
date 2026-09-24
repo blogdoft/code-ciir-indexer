@@ -221,15 +221,13 @@ public sealed class ProjectStore : IProjectStore
         // projects.created_at/updated_at are stored as timestamptz (always UTC); Npgsql returns
         // them with Kind=Unspecified, so it must be stamped explicitly to serialize with a "Z"
         // suffix.
-        public Project ToDomain() => new()
-        {
-            Id = Id,
-            Name = Name,
-            GitUrl = GitUrl,
-            GitRawUrl = GitRawUrl,
-            EmbeddingModel = new EmbeddingModel(EmbeddingModel, EmbeddingDimensions),
-            CreatedAt = DateTime.SpecifyKind(CreatedAt, DateTimeKind.Utc),
-            UpdatedAt = DateTime.SpecifyKind(UpdatedAt, DateTimeKind.Utc),
-        };
+        public Project ToDomain() => Project.Create(
+            Name,
+            GitUrl,
+            GitRawUrl,
+            global::Ciir.Indexer.Core.EmbeddingModel.Create(EmbeddingModel, EmbeddingDimensions).Value,
+            Id,
+            DateTime.SpecifyKind(CreatedAt, DateTimeKind.Utc),
+            DateTime.SpecifyKind(UpdatedAt, DateTimeKind.Utc)).Value;
     }
 }

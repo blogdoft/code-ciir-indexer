@@ -7,13 +7,14 @@ public sealed class CiirIdentityTests
     private static readonly string ValidValue = "sha256:" + new string('a', 64);
 
     [Fact]
-    public void Constructor_ValidSha256Value_PreservesItIntegrally()
+    public void Should_PreserveValueIntegrally_When_ValueIsValidSha256()
     {
-        var identity = new CiirIdentity(ValidValue);
+        var result = CiirIdentity.Create(ValidValue);
 
-        identity.Value.ShouldBe(ValidValue);
-        ((string)identity).ShouldBe(ValidValue);
-        identity.ToString().ShouldBe(ValidValue);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Value.ShouldBe(ValidValue);
+        ((string)result.Value).ShouldBe(ValidValue);
+        result.Value.ToString().ShouldBe(ValidValue);
     }
 
     [Theory]
@@ -24,14 +25,16 @@ public sealed class CiirIdentityTests
     [InlineData("sha256:tooshort")]
     [InlineData("md5:a")]
     [InlineData("SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")]
-    public void Constructor_InvalidValue_Throws(string? value)
+    public void Should_ReturnFailure_When_ValueIsInvalid(string? value)
     {
-        Should.Throw<ArgumentException>(() => new CiirIdentity(value!));
+        var result = CiirIdentity.Create(value);
+
+        result.IsFailure.ShouldBeTrue();
     }
 
     [Fact]
-    public void Equality_SameValue_AreEqual()
+    public void Should_BeEqual_When_ValuesAreTheSame()
     {
-        new CiirIdentity(ValidValue).ShouldBe(new CiirIdentity(ValidValue));
+        CiirIdentity.Create(ValidValue).Value.ShouldBe(CiirIdentity.Create(ValidValue).Value);
     }
 }

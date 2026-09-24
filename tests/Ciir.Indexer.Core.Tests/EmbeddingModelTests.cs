@@ -5,28 +5,35 @@ namespace Ciir.Indexer.Core.Tests;
 public sealed class EmbeddingModelTests
 {
     [Fact]
-    public void Constructor_ValidNameAndDimensions_Succeeds()
+    public void Should_CreateModel_When_NameAndDimensionsAreValid()
     {
-        var model = new EmbeddingModel("bge-m3", 1024);
+        var result = EmbeddingModel.Create("bge-m3", 1024);
 
-        model.Name.ShouldBe("bge-m3");
-        model.Dimensions.ShouldBe(1024);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Name.ShouldBe("bge-m3");
+        result.Value.Dimensions.ShouldBe(1024);
     }
 
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void Constructor_EmptyName_Throws(string? name)
+    public void Should_ReturnFailure_When_NameIsEmpty(string? name)
     {
-        Should.Throw<ArgumentException>(() => new EmbeddingModel(name!, 1024));
+        var result = EmbeddingModel.Create(name, 1024);
+
+        result.IsFailure.ShouldBeTrue();
+        result.Failure.Code.ShouldBe("400-embedding-model-invalid");
     }
 
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    public void Constructor_NonPositiveDimensions_Throws(int dimensions)
+    public void Should_ReturnFailure_When_DimensionsAreNotPositive(int dimensions)
     {
-        Should.Throw<ArgumentOutOfRangeException>(() => new EmbeddingModel("bge-m3", dimensions));
+        var result = EmbeddingModel.Create("bge-m3", dimensions);
+
+        result.IsFailure.ShouldBeTrue();
+        result.Failure.Code.ShouldBe("400-embedding-model-invalid");
     }
 }

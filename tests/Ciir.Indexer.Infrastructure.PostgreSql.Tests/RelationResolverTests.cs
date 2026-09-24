@@ -258,7 +258,7 @@ public sealed class RelationResolverTests
     private async Task<long> CreateProjectAsync()
     {
         var project = await _projectStore.EnsureProjectAsync(
-            TestData.NewProjectName(), null, null, new EmbeddingModel("bge-m3", PostgreSqlFixture.EmbeddingDimensions));
+            TestData.NewProjectName(), null, null, EmbeddingModel.Create("bge-m3", PostgreSqlFixture.EmbeddingDimensions).Value);
         return project.Id;
     }
 

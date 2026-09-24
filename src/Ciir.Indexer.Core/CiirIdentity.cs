@@ -1,3 +1,5 @@
+using BlogDoFT.Libs.ResultPattern;
+
 namespace Ciir.Indexer.Core;
 
 /// <summary>
@@ -6,14 +8,24 @@ namespace Ciir.Indexer.Core;
 /// </summary>
 public readonly record struct CiirIdentity
 {
-    public CiirIdentity(string value)
+    private CiirIdentity(string value)
     {
-        Value = Sha256Value.Validate(value, nameof(value));
+        Value = value;
     }
 
     public string Value { get; }
 
     public static implicit operator string(CiirIdentity identity) => identity.Value;
+
+    /// <summary>Validates and creates a <see cref="CiirIdentity"/> from its wire representation.</summary>
+    /// <param name="value">The candidate "sha256:&lt;64 hex chars&gt;" string.</param>
+    public static Result<CiirIdentity> Create(string? value)
+    {
+        var validation = Sha256Value.Create(value, nameof(CiirIdentity));
+        return validation.IsSuccess
+            ? Result<CiirIdentity>.FromSuccess(new CiirIdentity(validation.Value))
+            : Result<CiirIdentity>.FromFailure(validation.Failure);
+    }
 
     public override string ToString() => Value;
 }

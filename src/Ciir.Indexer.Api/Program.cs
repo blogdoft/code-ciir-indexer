@@ -1,16 +1,17 @@
+using BlogDoFT.Libs.Api.OpenTelemetry.Extensions;
+using BlogDoFT.Libs.WarmUp.Extensions;
 using Ciir.Indexer.Api.Authentication;
 using Ciir.Indexer.Api.Controllers;
 using Ciir.Indexer.Api.OpenApi;
 using Ciir.Indexer.Api.Uploads;
+using Ciir.Indexer.Api.WarmUp;
 using Ciir.Indexer.Application;
 using Ciir.Indexer.Application.Ports;
-using Ciir.Indexer.Application.UseCases;
 using Ciir.Indexer.Infrastructure.Embeddings.Abstractions;
 using Ciir.Indexer.Infrastructure.Embeddings.Ollama;
 using Ciir.Indexer.Infrastructure.Embeddings.OpenAI;
 using Ciir.Indexer.Infrastructure.ObjectStorage.Minio;
 using Ciir.Indexer.Infrastructure.PostgreSql;
-using Ciir.Indexer.Infrastructure.PostgreSql.Migrations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 
@@ -23,6 +24,10 @@ builder.Logging.AddJsonConsole();
 
 try
 {
+    // "UseLogExporter" is "DoNotUse" (sic - the library's own enum spelling) so OpenTelemetry
+    // doesn't emit a second log stream alongside the structured JSON console logs configured above.
+    builder.Services.AddOtel(builder.Configuration);
+
     // --- Keycloak authentication (auth spec): opt-in. Null unless "Keycloak:Enabled" is true, in
     // which case no authentication is registered and every endpoint stays open. ---
     var keycloakOptions = KeycloakOptions.FromConfiguration(builder.Configuration);
@@ -71,13 +76,17 @@ try
     builder.Services.AddPostgreSqlPersistence(
         connectionString, new IndexerDatabaseOptions { EmbeddingDimensions = embeddingOptions.Dimensions });
 
+    // Warm-up commands run in registration order, so the migrator (registered inside
+    // AddPostgreSqlPersistence above) always runs before the reconciler below it.
+    builder.Services.AddSingleton<OrphanedIndexingRunReconciler>();
+    builder.Services.AddWarmUp();
+
     // --- MinIO object storage for CIIR uploads (upload spec §5/§10/§11). ---
     var minioOptions = builder.Configuration.GetSection(MinioOptions.SectionName).Get<MinioOptions>()
         ?? throw new InvalidOperationException($"Missing required configuration section '{MinioOptions.SectionName}'.");
     builder.Services.AddMinioObjectStorage(minioOptions);
 
     var uploadOptions = builder.Configuration.GetSection(UploadOptions.SectionName).Get<UploadOptions>() ?? new UploadOptions();
-    builder.Services.AddSingleton(uploadOptions);
     builder.Services.AddRateLimiter(options =>
     {
         options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -91,32 +100,7 @@ try
     var indexingOptions = builder.Configuration.GetSection(IndexingOptions.SectionName).Get<IndexingOptions>() ?? new IndexingOptions();
     builder.Services.AddCiirIndexerApplication(indexingOptions);
 
-    // --- CIIR uploads (upload spec §4/§8): the bucket name is read from the "Minio" section here,
-    // in the composition root, rather than threaded through the Application layer, which must not
-    // depend on an infrastructure-specific options type. Uploading (POST /api/ciir-uploads) and
-    // registering an already-uploaded file (POST /api/ciir-uploads/register) are the only two ways
-    // a CIIR file reaches indexation - there is no local-filesystem-path entry point. ---
-    builder.Services.AddSingleton(sp => new SubmitCiirUpload(
-        sp.GetRequiredService<IProjectStore>(),
-        sp.GetRequiredService<IObjectStorage>(),
-        sp.GetRequiredService<ICiirUploadStore>(),
-        minioOptions.BucketName,
-        uploadOptions));
-    builder.Services.AddSingleton(sp => new RegisterCiirUpload(
-        sp.GetRequiredService<IProjectStore>(),
-        sp.GetRequiredService<IObjectStorage>(),
-        sp.GetRequiredService<ICiirUploadStore>(),
-        minioOptions.BucketName));
-    builder.Services.AddSingleton(sp => new ProcessNextCiirUpload(
-        sp.GetRequiredService<ICiirUploadStore>(),
-        sp.GetRequiredService<IObjectStorage>(),
-        sp.GetRequiredService<IProjectStore>(),
-        sp.GetRequiredService<IIndexingRunStore>(),
-        sp.GetRequiredService<IEmbeddingGenerator>(),
-        sp.GetRequiredService<RunIndexation>(),
-        uploadOptions,
-        sp.GetRequiredService<ILogger<ProcessNextCiirUpload>>()));
-    builder.Services.AddHostedService<CiirUploadWorker>();
+    builder.Services.AddCiirUploadsFeature(minioOptions, uploadOptions);
 
     var app = builder.Build();
 
@@ -125,21 +109,6 @@ try
 
     // Fail fast on an unreachable/misconfigured MinIO bucket rather than on the first upload.
     await app.Services.GetRequiredService<IObjectStorage>().EnsureBucketExistsAsync(minioOptions.BucketName);
-
-    using (var migrationScope = app.Services.CreateScope())
-    {
-        migrationScope.ServiceProvider.GetRequiredService<DatabaseMigrator>().Apply();
-    }
-
-    // Recover from a crash mid-run (spec §27): mark any indexing run left in-progress by a
-    // previous process lifetime as failed. A one-shot startup check, not an ongoing background
-    // loop - every run is now started synchronously within CiirUploadWorker's own polling cycle
-    // (ProcessNextCiirUpload -> RunIndexation), so there is no separate queue/worker to recover on.
-    var reconciledRunIds = await app.Services.GetRequiredService<IIndexingRunStore>().ReconcileOrphanedRunsAsync();
-    if (reconciledRunIds.Count > 0)
-    {
-        app.Logger.LogWarning("Marked {Count} orphaned indexing run(s) as failed on startup.", reconciledRunIds.Count);
-    }
 
     // Always mapped (not gated to Development) so Swagger is reachable in this cluster too - both
     // routes live under "api/indexer" since that's the only prefix the blogdoft.home.arpa ingress
@@ -180,6 +149,7 @@ try
 
     app.UseAuthorization();
     app.UseRateLimiter();
+    app.UseOpenTelemetry();
     app.MapHealthChecks("/health").ExcludeFromDescription().AllowAnonymous();
     app.MapControllers();
 

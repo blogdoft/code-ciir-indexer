@@ -1,13 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <PackageReference Include="Dapper" Version="2.1.79" />
+    <PackageReference Include="Dapper" Version="2.1.89" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
     <PackageReference Include="Pgvector" Version="0.3.2" />
     <PackageReference Include="FluentMigrator" Version="8.0.1" />
     <PackageReference Include="FluentMigrator.Runner" Version="8.0.1" />
     <PackageReference Include="FluentMigrator.Runner.Postgres" Version="8.0.1" />
-    <PackageReference Include="BlogDoFT.Libs.DapperUtils.Postgres" Version="1.12.0" />
+    <PackageReference Include="BlogDoFT.Libs.DapperUtils.Postgres" Version="1.14.0" />
+    <PackageReference Include="BlogDoFT.Libs.WarmUp" Version="10.1.1" />
   </ItemGroup>
 
   <ItemGroup>

@@ -91,7 +91,7 @@ public sealed class ProcessNextCiirUpload
             // Refreshes the project's stored embedding model/dimensions if the configured provider
             // changed since it was registered (spec §55) - never creates a new project, since the
             // name already exists.
-            var embeddingModel = new EmbeddingModel(_embeddingGenerator.Model, _embeddingGenerator.Dimensions);
+            var embeddingModel = EmbeddingModel.Create(_embeddingGenerator.Model, _embeddingGenerator.Dimensions).Value;
             var refreshedProject = await _projectStore.EnsureProjectAsync(
                 project.Name, project.GitUrl, project.GitRawUrl, embeddingModel, cancellationToken);
 

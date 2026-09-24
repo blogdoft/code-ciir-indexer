@@ -45,7 +45,7 @@ public sealed class UpdateProject
             name!,
             gitUrl,
             gitRawUrl,
-            new EmbeddingModel(embeddingModel!, embeddingDimensions!.Value),
+            EmbeddingModel.Create(embeddingModel!, embeddingDimensions!.Value).Value,
             cancellationToken);
 
         return updated is null

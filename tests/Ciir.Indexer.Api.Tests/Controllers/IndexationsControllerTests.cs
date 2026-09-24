@@ -51,15 +51,14 @@ public sealed class IndexationsControllerTests
         result.ShouldBeOfType<NotFoundResult>();
     }
 
-    private static IndexingRun BuildRun(IndexingStatus status, long projectId, IndexingCounters? counters = null) => new()
-    {
-        Id = Guid.NewGuid(),
-        Path = "/data/ciir/ciir.jsonl",
-        ProjectId = projectId,
-        Status = status,
-        StartedAt = DateTimeOffset.UtcNow,
-        Counters = counters ?? new IndexingCounters(),
-    };
+    private static IndexingRun BuildRun(IndexingStatus status, long projectId, IndexingCounters? counters = null) =>
+        IndexingRun.Create(
+            Guid.NewGuid(),
+            "/data/ciir/ciir.jsonl",
+            projectId,
+            status,
+            DateTimeOffset.UtcNow,
+            counters: counters).Value;
 
     private IndexationsController CreateSut() => new(_runStore);
 }

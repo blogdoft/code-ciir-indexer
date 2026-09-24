@@ -94,16 +94,12 @@ public sealed class CreateProjectTests
             Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>());
     }
 
-    private static Project BuildProject() => new()
-    {
-        Id = 1,
-        Name = "proj",
-        EmbeddingModel = new EmbeddingModel("bge-m3", 1024),
-        GitUrl = "https://git.example/repo",
-        GitRawUrl = "https://raw.example/repo",
-        CreatedAt = DateTime.UtcNow,
-        UpdatedAt = DateTime.UtcNow,
-    };
+    private static Project BuildProject() => Project.Create(
+        "proj",
+        "https://git.example/repo",
+        "https://raw.example/repo",
+        EmbeddingModel.Create("bge-m3", 1024).Value,
+        id: 1).Value;
 
     private CreateProject CreateSut() => new(_projectStore);
 }

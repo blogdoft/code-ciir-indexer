@@ -26,14 +26,12 @@ public sealed class CiirUploadsControllerTests
     {
         _projectStore
             .GetByIdAsync(ExistingProjectId, Arg.Any<CancellationToken>())
-            .Returns(new Project
-            {
-                Id = ExistingProjectId,
-                Name = "MyProject",
-                EmbeddingModel = new EmbeddingModel("bge-m3", 1024),
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-            });
+            .Returns(Project.Create(
+                "MyProject",
+                gitUrl: null,
+                gitRawUrl: null,
+                EmbeddingModel.Create("bge-m3", 1024).Value,
+                id: ExistingProjectId).Value);
 
         // A real IObjectStorage adapter reads the stream through to completion, which is exactly
         // what makes SizeLimitedStream's mid-stream size check fire - a substitute that never
@@ -229,16 +227,15 @@ public sealed class CiirUploadsControllerTests
         while (bytesRead > 0);
     }
 
-    private static CiirUpload BuildUpload(CiirUploadStatus status = CiirUploadStatus.Pending, Guid? indexingRunId = null) => new()
-    {
-        Id = Guid.NewGuid(),
-        ProjectId = ExistingProjectId,
-        Bucket = Bucket,
-        ObjectKey = $"{Guid.NewGuid():N}/ciir.jsonl",
-        Status = status,
-        CreatedAt = DateTimeOffset.UtcNow,
-        IndexingRunId = indexingRunId,
-    };
+    private static CiirUpload BuildUpload(CiirUploadStatus status = CiirUploadStatus.Pending, Guid? indexingRunId = null) =>
+        CiirUpload.Create(
+            Guid.NewGuid(),
+            ExistingProjectId,
+            Bucket,
+            $"{Guid.NewGuid():N}/ciir.jsonl",
+            status,
+            DateTimeOffset.UtcNow,
+            indexingRunId: indexingRunId).Value;
 
     private static DefaultHttpContext BuildMultipartHttpContext(
         string? projectId,
