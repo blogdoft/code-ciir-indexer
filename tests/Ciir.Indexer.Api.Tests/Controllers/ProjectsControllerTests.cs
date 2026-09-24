@@ -90,6 +90,40 @@ public sealed class ProjectsControllerTests
         body.Id.ShouldBe(created.PublicId);
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task CreateAsync_BlankGitUrls_PersistsThemAsNull(string blank)
+    {
+        _projectStore.ExistsByNameAsync("proj", null, Arg.Any<CancellationToken>()).Returns(false);
+        _projectStore
+            .InsertAsync("proj", null, null, Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>())
+            .Returns(BuildProject(1));
+
+        await CreateSut().CreateAsync(new ProjectCreateRequest("proj", "bge-m3", 1024, blank, blank), CancellationToken.None);
+
+        await _projectStore.Received(1).InsertAsync(
+            "proj", null, null, Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task UpdateAsync_BlankGitUrls_PersistsThemAsNull(string blank)
+    {
+        var existing = BuildProject(1);
+        _projectStore.GetByPublicIdAsync(existing.PublicId, Arg.Any<CancellationToken>()).Returns(existing);
+        _projectStore
+            .UpdateAsync(existing.Id, "proj", null, null, Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>())
+            .Returns(existing);
+
+        await CreateSut().UpdateAsync(
+            existing.PublicId.ToString(), new ProjectUpdateRequest("proj", "bge-m3", 1024, blank, blank), CancellationToken.None);
+
+        await _projectStore.Received(1).UpdateAsync(
+            existing.Id, "proj", null, null, Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task CreateAsync_NameConflict_ReturnsMappedFailure()
     {

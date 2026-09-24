@@ -134,8 +134,8 @@ public sealed class ProjectsController : ControllerBase
             request.Name,
             request.EmbeddingModel,
             request.EmbeddingDimensions,
-            request.GitUrl,
-            request.GitRawUrl,
+            NullIfBlank(request.GitUrl),
+            NullIfBlank(request.GitRawUrl),
             cancellationToken);
 
         return result.Map(
@@ -177,8 +177,8 @@ public sealed class ProjectsController : ControllerBase
             request.Name,
             request.EmbeddingModel,
             request.EmbeddingDimensions,
-            request.GitUrl,
-            request.GitRawUrl,
+            NullIfBlank(request.GitUrl),
+            NullIfBlank(request.GitRawUrl),
             cancellationToken);
 
         return result.Map(
@@ -217,6 +217,10 @@ public sealed class ProjectsController : ControllerBase
             onSuccess: _ => (IActionResult)NoContent(),
             onFailure: failure => failure.ToActionResult(HttpContext));
     }
+
+    // An omitted URL and an empty/blank one mean the same thing - "no URL" - so it is persisted as
+    // NULL, never as "", which consumers of projects.git_url/git_raw_url can't parse as a Uri.
+    private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
     private static ProjectListResponse ToListResponse(ProjectPage page) => new(
         page.Items.Select(ToResponse).ToList(),
