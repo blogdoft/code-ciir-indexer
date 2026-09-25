@@ -41,11 +41,13 @@ data:
   # scrapes. The collector only has a traces pipeline wired to Tempo, whose metrics-generator
   # derives the APM RED metrics (traces_spanmetrics_*) from spans - hence tracing only, no
   # metrics/logs exporter. HttpProtobuf over the collector's plain-HTTP 4318 port avoids the gRPC
-  # h2c (unencrypted HTTP/2) opt-in .NET otherwise needs for the 4317 port.
+  # h2c (unencrypted HTTP/2) opt-in .NET otherwise needs for the 4317 port. The endpoint must carry
+  # the full /v1/traces path: a configured Endpoint is used verbatim (the SDK only appends the
+  # signal path to the OTEL_EXPORTER_OTLP_ENDPOINT env var), and POST / on the collector is a 404.
   Observability__OpenTelemetry__UseTracingExporter: "Otlp"
   Observability__OpenTelemetry__UseMetricsExporter: "DoNotUse"
   Observability__OpenTelemetry__UseLogExporter: "DoNotUse"
-  Observability__OtlpExporterOptions__Endpoint: "http://otel-collector.observability.svc.cluster.local:4318"
+  Observability__OtlpExporterOptions__Endpoint: "http://otel-collector.observability.svc.cluster.local:4318/v1/traces"
   Observability__OtlpExporterOptions__Protocol: "HttpProtobuf"
   # CIIR upload endpoint (POST /api/ciir-uploads, upload spec §5/§10) - object storage for
   # uploaded CIIR files pending indexation. Endpoint uses the in-cluster Service DNS (this app
