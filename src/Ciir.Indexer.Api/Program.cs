@@ -14,6 +14,7 @@ using Ciir.Indexer.Infrastructure.ObjectStorage.Minio;
 using Ciir.Indexer.Infrastructure.PostgreSql;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using OpenTelemetry.Instrumentation.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,6 +28,11 @@ try
     // "UseLogExporter" is "DoNotUse" so OpenTelemetry doesn't emit a second log stream alongside
     // the structured JSON console logs configured above.
     builder.Services.AddOtel(builder.Configuration);
+
+    // The kubelet's probe hits are noise in the APM: dropping them here also drops their child
+    // spans (the sampler follows the parent's decision), such as the readiness DB query.
+    builder.Services.Configure<AspNetCoreTraceInstrumentationOptions>(options =>
+        options.Filter = httpContext => !httpContext.Request.Path.StartsWithSegments("/health"));
 
     // --- Keycloak authentication (auth spec): opt-in. Null unless "Keycloak:Enabled" is true, in
     // which case no authentication is registered and every endpoint stays open. ---
@@ -151,7 +157,7 @@ try
     app.UseAuthorization();
     app.UseRateLimiter();
     app.UseOpenTelemetry();
-    app.MapHealthChecks("/health").ExcludeFromDescription().AllowAnonymous();
+    app.MapHealthChecks("/health").ExcludeFromDescription().AllowAnonymous().DisableHttpMetrics();
     app.MapControllers();
 
     await app.RunAsync();

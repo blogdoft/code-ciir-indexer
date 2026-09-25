@@ -64,12 +64,12 @@ spec:
               path: /health
               port: http
             initialDelaySeconds: 5
-            periodSeconds: 10
+            periodSeconds: 60
           livenessProbe:
             tcpSocket:
               port: http
             initialDelaySeconds: 15
-            periodSeconds: 20
+            periodSeconds: 60
           resources:
             requests:
               cpu: 100m
