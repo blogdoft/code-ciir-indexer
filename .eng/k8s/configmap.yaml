@@ -36,6 +36,17 @@ data:
   Reranking__TimeoutSeconds: "120"
   Reranking__CandidatePoolSize: "25"
   Reranking__MaxConcurrency: "6"
+  # Traces go straight to Tempo through the cluster otel-collector (observability namespace) over
+  # OTLP - never to stdout, which is reserved for the structured JSON logs the log collector
+  # scrapes. The collector only has a traces pipeline wired to Tempo, whose metrics-generator
+  # derives the APM RED metrics (traces_spanmetrics_*) from spans - hence tracing only, no
+  # metrics/logs exporter. HttpProtobuf over the collector's plain-HTTP 4318 port avoids the gRPC
+  # h2c (unencrypted HTTP/2) opt-in .NET otherwise needs for the 4317 port.
+  Observability__OpenTelemetry__UseTracingExporter: "Otlp"
+  Observability__OpenTelemetry__UseMetricsExporter: "DoNotUse"
+  Observability__OpenTelemetry__UseLogExporter: "DoNotUse"
+  Observability__OtlpExporterOptions__Endpoint: "http://otel-collector.observability.svc.cluster.local:4318"
+  Observability__OtlpExporterOptions__Protocol: "HttpProtobuf"
   # CIIR upload endpoint (POST /api/ciir-uploads, upload spec §5/§10) - object storage for
   # uploaded CIIR files pending indexation. Endpoint uses the in-cluster Service DNS (this app
   # runs inside the cluster) rather than the minio-api.home.arpa Ingress used for external/local
