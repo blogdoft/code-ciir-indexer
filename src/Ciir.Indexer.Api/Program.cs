@@ -15,6 +15,7 @@ using Ciir.Indexer.Infrastructure.PostgreSql;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using OpenTelemetry.Instrumentation.AspNetCore;
+using OpenTelemetry.Resources;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -33,6 +34,12 @@ try
     // spans (the sampler follows the parent's decision), such as the readiness DB query.
     builder.Services.Configure<AspNetCoreTraceInstrumentationOptions>(options =>
         options.Filter = httpContext => !httpContext.Request.Path.StartsWithSegments("/health"));
+
+    // The shared library names the service after the "ApplicationName" configuration key, but that
+    // key is reserved by the ASP.NET host and always resolves to the assembly name, so it can't be
+    // overridden from configuration. Set here instead, after AddOtel so it wins.
+    var otelServiceName = builder.Configuration["OTEL_SERVICE_NAME"] ?? "code-ciir-indexer";
+    builder.Services.AddOpenTelemetry().ConfigureResource(resource => resource.AddService(otelServiceName));
 
     // --- Keycloak authentication (auth spec): opt-in. Null unless "Keycloak:Enabled" is true, in
     // which case no authentication is registered and every endpoint stays open. ---

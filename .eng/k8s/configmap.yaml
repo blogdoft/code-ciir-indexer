@@ -44,6 +44,9 @@ data:
   # h2c (unencrypted HTTP/2) opt-in .NET otherwise needs for the 4317 port. The endpoint must carry
   # the full /v1/traces path: a configured Endpoint is used verbatim (the SDK only appends the
   # signal path to the OTEL_EXPORTER_OTLP_ENDPOINT env var), and POST / on the collector is a 404.
+  # Service name shown in Tempo. Comes from OTEL_SERVICE_NAME, NOT from "ApplicationName" - the
+  # ASP.NET host reserves that key and always sets it to the assembly name.
+  OTEL_SERVICE_NAME: "code-ciir-indexer"
   Observability__OpenTelemetry__UseTracingExporter: "Otlp"
   Observability__OpenTelemetry__UseMetricsExporter: "DoNotUse"
   Observability__OpenTelemetry__UseLogExporter: "DoNotUse"
