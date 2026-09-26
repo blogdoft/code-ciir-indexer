@@ -20,9 +20,11 @@ public sealed class MinioObjectStorageTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        // Docker Hub's "minio/minio" now rejects anonymous pulls (MinIO publishes the open-source
-        // AGPL image on Quay.io instead) - verified by hand in this environment.
-        _container = new MinioBuilder("quay.io/minio/minio:latest").Build();
+        // Neither Docker Hub's "minio/minio" nor Quay.io's "quay.io/minio/minio" allows anonymous pulls
+        // any more, so the CI runner cannot fetch them. This is a mirror of the pinned upstream release
+        // in this Forgejo instance's registry (anonymous pull works there); it was pushed from
+        // quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z.
+        _container = new MinioBuilder("forgejo.home.arpa/sauron/minio:RELEASE.2025-09-07T16-13-09Z").Build();
         await _container.StartAsync();
 
         var endpoint = _container.GetConnectionString()
