@@ -4,7 +4,8 @@ Reads CIIR JSONL, generates embeddings, and upserts documents/relations into Pos
 pgvector. See `CLAUDE.md` for architecture and tooling conventions, and `.specs/` for the
 detailed functional specs (`01-Spec-inicial.md` for the core indexer, `02-upload-ciir-minio.md`
 for the MinIO upload endpoint, `04-uploads-only.md` for why the old local-path endpoint is gone,
-`05-keycloak-auth.md` for the optional Keycloak authentication).
+`05-keycloak-auth.md` for the optional Keycloak authentication, `06-token-gateway.md` for the
+token endpoint non-interactive clients use to get a token).
 
 ## Indexing a CIIR file
 
@@ -48,7 +49,8 @@ Missing, expired or otherwise invalid tokens get `401` with a `WWW-Authenticate:
 Problem Details body. Any valid token from the realm is accepted - there is no per-role authorization.
 
 Deliberately left anonymous, even with Keycloak on: `GET /health` (the Kubernetes readiness probe has
-no token) and the OpenAPI document/Swagger UI (a browser can't attach a token to page navigation).
+no token), the OpenAPI document/Swagger UI (a browser can't attach a token to page navigation) and
+`POST /api/indexer/auth/token` (it is what produces the token; see "Token gateway" below).
 In Swagger UI, **Authorize** takes an access token pasted into the `Bearer` field and, when
 `ClientId` is set, also offers an `OAuth2` login: it redirects to Keycloak (authorization code
 + PKCE) and comes back authorized, so "Try it out" works without fetching a token by hand. That
@@ -60,6 +62,51 @@ URIs** (e.g. `https://blogdoft.home.arpa/code-brain/api/indexer/swagger/oauth2-r
 is set, give that client an audience mapper for it.
 
 ```bash
+curl -H "Authorization: Bearer $TOKEN" https://blogdoft.home.arpa/code-brain/api/indexer/projects
+```
+
+### Token gateway (`POST /api/indexer/auth/token`)
+
+Non-interactive clients (e.g. the `ciir --send` pipeline) can get an access token by talking only to
+this service, without knowing where or how the realm issues tokens (`.specs/06-token-gateway.md`).
+The endpoint is **anonymous** and only exists when `Keycloak:Enabled` is `true`; with authentication
+off it answers a body-less `404`, since there is no token to issue.
+
+Request (`application/json`) - `clientId` and `clientSecret` are both required:
+
+```json
+{ "clientId": "ciir-pipeline", "clientSecret": "..." }
+```
+
+| Status | When | Body |
+|---|---|---|
+| `200` | Token issued | `{ "accessToken": "<jwt>", "tokenType": "Bearer", "expiresIn": 300 }` (`expiresIn` in seconds, omitted if Keycloak doesn't report it) |
+| `400` | `clientId` or `clientSecret` missing/blank | Problem Details |
+| `401` | Keycloak refused the credentials (unknown client, wrong secret, client without *Service accounts*) | Problem Details with a generic `detail` (Keycloak's answer is not forwarded) |
+| `404` | Authentication is off (`Keycloak:Enabled=false`) | none |
+| `502` | Keycloak is unreachable, timed out (15 s) or answered something unusable | Problem Details |
+
+Things to know:
+
+- **Only the `client_credentials` grant.** It is not a generic Keycloak proxy: the request can't pick a
+  grant, a `scope` or any other parameter.
+- The token endpoint is derived from `Keycloak:Authority` (the realm's *public* URL) as
+  `{Authority}/protocol/openid-connect/token`, **not** from `MetadataAddress`: Keycloak derives the
+  token's `iss` from the host the request arrived on, and the JWT bearer handler validates `iss` against
+  `Authority`. So the public host must be reachable from this service (it already has to be for the JWKS
+  unless `MetadataAddress` points elsewhere).
+- The Keycloak client used must be **confidential** (**Client authentication = on**) with **Service
+  accounts roles = on**. If `Audience` is set, it also needs the audience mapper, as before.
+- Use **HTTPS**: the request body carries the client secret. The secret is never logged nor echoed in
+  an error; logs only carry the `clientId` and Keycloak's status.
+- There is no rate limiting here, and Keycloak doesn't lock out client-secret guessing: since the route is
+  anonymous, throttle it at the ingress.
+
+```bash
+TOKEN=$(curl -s -X POST https://blogdoft.home.arpa/code-brain/api/indexer/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"clientId":"ciir-pipeline","clientSecret":"'"$CLIENT_SECRET"'"}' | jq -r .accessToken)
+
 curl -H "Authorization: Bearer $TOKEN" https://blogdoft.home.arpa/code-brain/api/indexer/projects
 ```
 

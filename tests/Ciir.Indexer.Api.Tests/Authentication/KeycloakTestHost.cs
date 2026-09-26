@@ -2,6 +2,7 @@ using Ciir.Indexer.Api.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -30,7 +31,10 @@ internal static class KeycloakTestHost
 
     public static SymmetricSecurityKey NewKey(char fill) => new(Encoding.UTF8.GetBytes(new string(fill, 64)));
 
-    public static async Task<IHost> StartAsync(KeycloakOptions? keycloak)
+    public static async Task<IHost> StartAsync(
+        KeycloakOptions? keycloak,
+        Action<IServiceCollection>? configureServices = null,
+        Action<IEndpointRouteBuilder>? mapEndpoints = null)
     {
         var builder = new HostBuilder().ConfigureWebHost(web => web
             .UseTestServer()
@@ -47,6 +51,8 @@ internal static class KeycloakTestHost
                     services.Configure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, bearer =>
                         bearer.Configuration = new OpenIdConnectConfiguration { Issuer = Issuer, SigningKeys = { SigningKey } });
                 }
+
+                configureServices?.Invoke(services);
             })
             .Configure(app =>
             {
@@ -61,6 +67,7 @@ internal static class KeycloakTestHost
                 {
                     endpoints.MapGet(OpenEndpoint, () => "healthy").AllowAnonymous();
                     endpoints.MapGet(ProtectedEndpoint, () => "ok");
+                    mapEndpoints?.Invoke(endpoints);
                 });
             }));
 

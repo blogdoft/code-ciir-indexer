@@ -47,6 +47,7 @@ try
     if (keycloakOptions is not null)
     {
         builder.Services.AddKeycloakAuthentication(keycloakOptions);
+        builder.Services.AddKeycloakTokenGateway(keycloakOptions);
     }
 
     builder.Services.AddControllers();
