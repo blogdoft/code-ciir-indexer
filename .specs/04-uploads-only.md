@@ -1,15 +1,12 @@
 # Uploads-only ingestion: remove the local-path endpoint, add upload registration
 
-> **Atualização:** o object storage passou de MinIO para **Garage** (S3-compatível); onde este documento diz
-> "MinIO" ou `mc cp`, leia "object storage" / qualquer cliente S3. Ver `02-upload-ciir-minio.md`.
-
 **Status: concluído.** `POST /api/indexations` (the original local-filesystem-path entry point,
-spec §2/§33/§40/§42) is removed. The CIIR upload flow (`02-upload-ciir-minio.md`) is now the only
+spec §2/§33/§40/§42) is removed. The CIIR upload flow (`02-upload-ciir-garage.md`) is now the only
 way to get a file indexed, via two entry points:
 
-- `POST /api/ciir-uploads` - unchanged, streams a file over HTTP into MinIO.
+- `POST /api/ciir-uploads` - unchanged, streams a file over HTTP into Garage.
 - `POST /api/ciir-uploads/register` - **new**. Registers a `.jsonl` file the caller already placed
-  directly in this service's configured MinIO bucket (e.g. via `mc cp`), for files too large to
+  directly in this service's configured Garage bucket (e.g. via `aws s3 cp`), for files too large to
   push through a single HTTP request body.
 
 ## Why
@@ -22,7 +19,7 @@ configured `AllowedInputRoots`, so the endpoint was never actually reachable in 
 endpoint still has to fit a request inside Kestrel's body-size handling and `SizeLimitedStream`'s
 byte-by-byte enforcement (`Uploads:MaxCiirFileSizeBytes`, 200 MB by default) - workable for most
 CIIR files, not for an unusually large one. `POST /api/ciir-uploads/register` covers that case: the
-caller uploads the file to MinIO with whatever tool handles large transfers well (`mc cp`, a
+caller uploads the file to Garage with whatever tool handles large transfers well (`aws s3 cp`, a
 presigned URL, another S3 client), then tells this service where they put it.
 
 ## Contract
@@ -32,9 +29,9 @@ presigned URL, another S3 client), then tells this service where they put it.
 - Body: `{ "projectId": "<id>", "objectKey": "<key>" }` - `projectId` must reference an
   already-registered project (same rule as `POST /api/ciir-uploads`); `objectKey` is the key the
   `.jsonl` file was already stored under **in this service's own configured bucket** - the request
-  never names a bucket, matching the least-privilege MinIO credentials this service runs as
+  never names a bucket, matching the dedicated Garage credentials this service runs as
   (scoped to exactly one bucket, see `README.md`).
-- The object's existence is verified (`IObjectStorage.ExistsAsync`, via `StatObjectAsync`) before
+- The object's existence is verified (`IObjectStorage.ExistsAsync`, via `GetObjectMetadataAsync`) before
   registering it - a typo'd `objectKey` fails synchronously with `404-object-not-found` rather than
   creating a `CiirUpload` row that can never be processed (which would otherwise only resolve after
   `Uploads:StuckProcessingTimeoutMinutes` × `Uploads:MaxRetryCount`).
@@ -46,7 +43,7 @@ presigned URL, another S3 client), then tells this service where they put it.
 ## Implementation
 
 - `IObjectStorage` gained `ExistsAsync(bucket, objectKey, ct)`, implemented in
-  `MinioObjectStorage` via `StatObjectAsync`, catching `ObjectNotFoundException` to return `false`.
+  `S3ObjectStorage` via `GetObjectMetadataAsync`, catching `AmazonS3Exception` with status 404 to return `false`.
 - `RegisterCiirUpload` (Application/UseCases) mirrors `SubmitCiirUpload`'s validation
   (`projectId` parsing, `.jsonl` extension, project existence) via the shared
   `CiirUploadValidation` helper, then additionally requires `IObjectStorage.ExistsAsync` before
@@ -81,7 +78,7 @@ processing it (`GET /api/ciir-uploads/{uploadId}`).
 
 - Existing `IndexationsControllerTests`/`ProcessNextCiirUploadTests`/etc. trimmed to match, not
   rewritten around the removed flow.
-- `RegisterCiirUploadTests` (validation ordering, object-existence gate), `MinioObjectStorageTests`
-  (`ExistsAsync` against a real Testcontainers MinIO), `CiirUploadsControllerTests`
+- `RegisterCiirUploadTests` (validation ordering, object-existence gate), `S3ObjectStorageTests`
+  (`ExistsAsync` against a real Testcontainers Garage), `CiirUploadsControllerTests`
   (`RegisterAsync`) added.
 - Full `dotnet test` and `dotnet format --verify-no-changes` green.

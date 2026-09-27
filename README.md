@@ -2,8 +2,8 @@
 
 Reads CIIR JSONL, generates embeddings, and upserts documents/relations into PostgreSQL +
 pgvector. See `CLAUDE.md` for architecture and tooling conventions, and `.specs/` for the
-detailed functional specs (`01-Spec-inicial.md` for the core indexer, `02-upload-ciir-minio.md`
-for the object-storage upload endpoint (originally specified against MinIO, now Garage),
+detailed functional specs (`01-Spec-inicial.md` for the core indexer, `02-upload-ciir-garage.md`
+for the Garage upload endpoint,
 `04-uploads-only.md` for why the old local-path endpoint is gone,
 `05-keycloak-auth.md` for the optional Keycloak authentication, `06-token-gateway.md` for the
 token endpoint non-interactive clients use to get a token).
@@ -83,7 +83,7 @@ Request (`application/json`) - `clientId` and `clientSecret` are both required:
 |---|---|---|
 | `200` | Token issued | `{ "accessToken": "<jwt>", "tokenType": "Bearer", "expiresIn": 300 }` (`expiresIn` in seconds, omitted if Keycloak doesn't report it) |
 | `400` | `clientId` or `clientSecret` missing/blank | Problem Details |
-| `401` | Keycloak refused the credentials (unknown client, wrong secret, client without *Service accounts*) | Problem Details with a generic `detail` (Keycloak's answer is not forwarded) |
+| `401` | Keycloak refused the credentials (unknown client, wrong secret, client without *Service accounts*) | No response body (logged only; Keycloak's answer is not forwarded) |
 | `404` | Authentication is off (`Keycloak:Enabled=false`) | none |
 | `502` | Keycloak is unreachable, timed out (15 s) or answered something unusable | Problem Details |
 
@@ -160,8 +160,7 @@ bucket fails startup fast instead of being created.
   (`ObjectStorage:Endpoint`, `ObjectStorage:Region`, `ObjectStorage:UseSsl`,
   `ObjectStorage:BucketName`, `ObjectStorage:AccessKey`, `ObjectStorage:SecretKey`) - never in a
   committed file other than the throwaway development key in `appsettings.json`. Inspect with
-  `dotnet user-secrets list --project src/Ciir.Indexer.Api`. Any old `Minio:*` entries are no longer
-  read and can be removed.
+  `dotnet user-secrets list --project src/Ciir.Indexer.Api`.
 - **Cluster deployment**: `.eng/k8s/code-ciir-garage-secrets.yaml` documents the `Secret` shape
   `deployment.yaml` expects (`code-ciir-garage-secrets`, keys `access-key`/`secret-key`). Fill it
   with the key printed above; the file is git-ignored and is **not** applied automatically - decide

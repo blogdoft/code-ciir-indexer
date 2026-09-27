@@ -64,9 +64,9 @@ Requisições sem `Authorization` funcionam exatamente como hoje; um header `Aut
   qualquer endpoint adicionado no futuro, sem depender de `[Authorize]` em cada controller (o
   desenho inverso - esquecer um atributo e deixar uma rota aberta - é o que se quer evitar).
 - Sem token, token malformado, expirado, com assinatura/issuer/audiência inválidos:
-  `401 Unauthorized`, `WWW-Authenticate: Bearer`, corpo `application/problem+json` no mesmo formato
-  dos demais erros da API (`ProblemResults`), com `detail` genérico (não vaza o motivo específico da
-  validação do token).
+  `401 Unauthorized`, `WWW-Authenticate: Bearer`, **sem corpo** (regra do
+  `csharp-api`: 401/403/404/5xx não têm corpo, só log da aplicação). O motivo específico da rejeição
+  do token não vai ao cliente - só ao log.
 - Não há `403`: sem autorização por role/scope, um token válido sempre passa.
 
 ### Exceções deliberadas a "todas as URLs" (permanecem anônimas)
@@ -96,7 +96,7 @@ Autenticação é uma preocupação da borda HTTP (adaptador de entrada), portan
   aplica as validações de startup acima.
 - `Authentication/KeycloakAuthenticationExtensions.cs`:
   - `AddKeycloakAuthentication(this IServiceCollection, KeycloakOptions)` - registra `JwtBearer`
-    (incl. `OnChallenge` que escreve o `problem+json` do 401) e o `FallbackPolicy`;
+    (incl. `OnChallenge`, que responde 401 sem corpo e registra o motivo no log) e o `FallbackPolicy`;
   - `AddKeycloakSecurityScheme(this OpenApiOptions)`/`OpenApi/BearerSecurityDocumentTransformer.cs` -
     adiciona o scheme/requirement ao documento OpenAPI.
 - `Program.cs`:
@@ -146,7 +146,7 @@ assinados com essa chave.
   `http://` com `RequireHttpsMetadata = true` → erro; `http://` com `false` → ok; configuração
   completa → opções preenchidas.
 - `KeycloakAuthenticationTests`, host **habilitado**: sem token → 401 + `WWW-Authenticate: Bearer` +
-  `application/problem+json`; token com assinatura errada → 401; token expirado → 401; token com
+  corpo vazio; token com assinatura errada → 401; token expirado → 401; token com
   issuer errado → 401; token válido → 200; `Audience` configurada e token sem ela → 401; `Audience`
   configurada e token com ela → 200; `/health` sem token → 200; um endpoint qualquer sem
   `[Authorize]` sem token → 401 (prova a `FallbackPolicy`).
@@ -158,7 +158,7 @@ assinados com essa chave.
 ### Conferência manual (feita, antes da chave `Enabled`)
 
 Rodada quando a autenticação ainda era deduzida da `Authority`; a parte que depende do `Enabled` foi
-reverificada na atualização abaixo. Contra o app real (`dotnet run`, Postgres/MinIO locais) e um servidor OIDC falso servindo
+reverificada na atualização abaixo. Contra o app real (`dotnet run`, Postgres/Garage locais) e um servidor OIDC falso servindo
 discovery document + JWKS RSA (tokens RS256 assinados com `openssl`), exercitando o fluxo real de
 descoberta de chaves do `JwtBearer`:
 

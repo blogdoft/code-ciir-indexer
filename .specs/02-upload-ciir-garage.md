@@ -1,10 +1,4 @@
-# Upload de CIIR via MinIO e Worker de Processamento Assíncrono
-
-> **Atualização:** o object storage passou de MinIO para **Garage** (S3-compatível). O adaptador agora é
-> `Ciir.Indexer.Infrastructure.ObjectStorage.S3` (AWSSDK.S3, path-style, região `garage`), a seção de
-> configuração é `ObjectStorage` (`Endpoint`, `Region`, `AccessKey`, `SecretKey`, `UseSsl`, `BucketName`) e os
-> testes de integração usam um container Garage. Onde este documento diz "MinIO", leia "object storage";
-> `mc cp` vira qualquer cliente S3 (ex.: `aws s3 cp --endpoint-url ...`). O comportamento descrito não mudou.
+# Upload de CIIR via Garage e Worker de Processamento Assíncrono
 
 ## 1. Objetivo
 
@@ -22,7 +16,7 @@ O arquivo enviado:
 upload HTTP (projectId + ciirFile)
    │
    ▼
-bucket MinIO (pasta de nome aleatório)
+bucket Garage (pasta de nome aleatório)
    │
    ▼
 registro "pendente" em tabela dedicada
@@ -34,7 +28,7 @@ Worker (BackgroundService) faz polling
 reaproveita o motor de indexação existente (RunIndexation)
    │
    ▼
-arquivo apagado do MinIO + registro "processado"
+arquivo apagado do Garage + registro "processado"
 ```
 
 Este documento assume conhecimento de `01-Spec-inicial.md` (contrato CIIR, `projects`,
@@ -123,10 +117,10 @@ Erros (mesma convenção de `Failure.Code` = `"{status}-{slug}"` já usada por
 400-invalid-extension         ciirFile sem extensão .jsonl
 413-file-too-large            ciirFile maior que o limite configurado
 429-too-many-uploads          limite de uploads simultâneos atingido
-503-object-storage-unavailable  MinIO inacessível no momento do upload
+503-object-storage-unavailable  Garage inacessível no momento do upload
 ```
 
-A validação de `projectId` acontece **antes** de iniciar o streaming do arquivo para o MinIO —
+A validação de `projectId` acontece **antes** de iniciar o streaming do arquivo para o Garage —
 não faz sentido receber 200 MB para só então descobrir que o projeto não existe. Isso implica
 receber e validar as partes de texto do multipart (`projectId`) antes de começar a consumir a
 parte de arquivo (`ciirFile`), o que é natural em uma leitura sequencial via `MultipartReader`
@@ -162,7 +156,7 @@ GET /api/ciir-uploads/{id}
 
 ---
 
-## 5. Armazenamento no MinIO
+## 5. Armazenamento no Garage
 
 ```text
 bucket:  configurado (ex.: "ciir-uploads")
@@ -174,7 +168,7 @@ A chave do objeto **nunca** é derivada do nome de arquivo enviado pelo cliente 
 `{guid}/ciir.jsonl`. Isso evita colisão entre uploads, path traversal na chave, e vazamento do
 nome original do arquivo no armazenamento.
 
-O envio do endpoint para o MinIO deve ser **streaming direto**, sem buffer completo em memória
+O envio do endpoint para o Garage deve ser **streaming direto**, sem buffer completo em memória
 nem cópia intermediária em disco:
 
 ```text
@@ -187,7 +181,7 @@ parte "projectId" (lida e validada primeiro)
 stream da parte "ciirFile"
    │  (contagem de bytes em tempo real, aborta se exceder o limite)
    ▼
-IObjectStorage.UploadAsync (SDK MinIO)
+IObjectStorage.UploadAsync (AWSSDK.S3 → Garage)
 ```
 
 Usar `MultipartReader` (`Microsoft.AspNetCore.WebUtilities`) manualmente em vez de
@@ -270,7 +264,7 @@ Worker para sempre. `MaxRetryCount` só existe para o caso de o processo do Work
 do processamento (crash, OOM) — nunca para re-tentar um erro de conteúdo, que é determinístico e
 não muda ao tentar de novo.
 
-Em ambos os estados terminais o objeto correspondente é apagado do MinIO — não há razão para
+Em ambos os estados terminais o objeto correspondente é apagado do Garage — não há razão para
 reter um arquivo de até 200 MB que já foi processado (com sucesso ou não) e não será reprocessado.
 
 ---
@@ -285,7 +279,7 @@ tabela `ciir_uploads`.
 Ciclo (repete enquanto a aplicação estiver de pé):
 
 ```text
-1. Marcar como "failed" (e apagar do MinIO) qualquer registro "processing" travado há mais
+1. Marcar como "failed" (e apagar do Garage) qualquer registro "processing" travado há mais
    de X minutos E que já esgotou as tentativas.
 
 2. Reivindicar o registro mais antigo elegível:
@@ -296,7 +290,7 @@ Ciclo (repete enquanto a aplicação estiver de pé):
    passo 1.
 
 4. Se um registro foi reivindicado:
-   a. Baixar o objeto do MinIO para um diretório de staging local exclusivo deste upload
+   a. Baixar o objeto do Garage para um diretório de staging local exclusivo deste upload
       (streaming disco-a-disco, sem carregar em memória).
    b. Buscar o projeto por upload.ProjectId (IProjectStore.GetByIdAsync — novo método, ver §9).
       Se não existir mais, marcar o upload como "failed" (projeto removido após o upload) e
@@ -312,7 +306,7 @@ Ciclo (repete enquanto a aplicação estiver de pé):
    f. Executar RunIndexation.ExecuteAsync — o mesmo motor já usado pelo fluxo por path, sem
       nenhuma duplicação de lógica de embeddings/relações.
    g. Apagar o arquivo de staging local (sempre, mesmo se a indexação falhar).
-   h. Apagar o objeto do MinIO.
+   h. Apagar o objeto do Garage.
    i. Marcar o upload como "processed" (se o indexing_run terminou Completed) ou "failed" (caso
       contrário), com processed_at = agora.
    j. Voltar imediatamente ao passo 1, sem esperar — só espera quando não há nada a fazer.
@@ -361,10 +355,10 @@ RETURNING id, bucket, object_key;
 `01-Spec-inicial.md`) — sempre deixa o `indexing_run` em um status terminal
 (`Completed`/`Failed`/`Cancelled`). O passo 4.i só precisa ler esse status final; não precisa de
 try/catch em torno da chamada em si, só em torno do download/staging/lookup de projeto (passos
-4.a–4.c, que podem falhar por problemas de MinIO/disco/projeto removido antes mesmo de chegar ao
+4.a–4.c, que podem falhar por problemas de Garage/disco/projeto removido antes mesmo de chegar ao
 `RunIndexation`).
 
-O download do MinIO gera um path **local, gerado pelo próprio servidor**
+O download do Garage gera um path **local, gerado pelo próprio servidor**
 (`{StagingDirectory}/{uploadId:N}/ciir.jsonl`) — nunca derivado de entrada do cliente. Por isso
 este path **não passa** por `InputPathResolver`/`AllowedInputRoots`: aquela validação existe para
 um path que o cliente controla (o fluxo por path local); aqui o path é sempre construído pelo
@@ -426,7 +420,7 @@ Novos casos de uso em `Ciir.Indexer.Application/UseCases/`:
 
 ```text
 SubmitCiirUpload        — endpoint POST: valida projectId (obrigatório, deve existir via
-                           IProjectStore.GetByIdAsync), sobe o stream pro MinIO, cria o
+                           IProjectStore.GetByIdAsync), sobe o stream pro Garage, cria o
                            registro "pending". Retorna Result<CiirUpload>. Nunca cria/atualiza
                            projeto.
 
@@ -436,13 +430,13 @@ ProcessNextCiirUpload   — chamado pelo Worker a cada ciclo: executa os passos 
 ```
 
 Novo projeto de adaptador (mesmo padrão de um projeto por provedor de embedding):
-`Ciir.Indexer.Infrastructure.ObjectStorage.Minio/`
+`Ciir.Indexer.Infrastructure.ObjectStorage.S3/`
 
 ```text
-MinioOptions.cs                  — Endpoint, AccessKey, SecretKey, UseSsl, BucketName
-MinioObjectStorage.cs            — implementa IObjectStorage via SDK oficial "Minio" (NuGet)
+S3Options.cs                     — Endpoint, Region, AccessKey, SecretKey, UseSsl, BucketName
+S3ObjectStorage.cs               — implementa IObjectStorage via AWSSDK.S3 (NuGet), path-style, região "garage"
 ObjectStorageUnavailableException.cs   — mesma ideia de DatabaseUnavailableException
-ServiceCollectionExtensions.cs   — AddMinioObjectStorage(MinioOptions)
+ServiceCollectionExtensions.cs   — AddS3ObjectStorage(S3Options)
 ```
 
 `Ciir.Indexer.Infrastructure.PostgreSql/` ganha:
@@ -476,9 +470,9 @@ Contracts/CiirUploadStatusResponse.cs
 Uploads/CiirUploadWorker.cs            — BackgroundService, mesmo formato de IndexationWorker.cs
 ```
 
-`Program.cs` ganha: bind de `MinioOptions`/`UploadOptions` (padrão já usado —
+`Program.cs` ganha: bind de `S3Options`/`UploadOptions` (padrão já usado —
 `?? throw new InvalidOperationException(...)` para seção obrigatória), chamada a
-`AddMinioObjectStorage(...)`, `EnsureBucketExistsAsync` como fail-fast eager na inicialização
+`AddS3ObjectStorage(...)`, `EnsureBucketExistsAsync` como fail-fast eager na inicialização
 (mesmo espírito de `app.Services.GetRequiredService<IEmbeddingGenerator>()`), registro de
 `AddHostedService<CiirUploadWorker>()`, e a policy de rate limiting do §11.
 
@@ -491,8 +485,9 @@ só adiciona um segundo ponto de entrada, não substitui o existente.
 
 ```json
 {
-  "Minio": {
-    "Endpoint": "minio.internal:9000",
+  "ObjectStorage": {
+    "Endpoint": "garage.internal:3900",
+    "Region": "garage",
     "AccessKey": "***",
     "SecretKey": "***",
     "UseSsl": true,
@@ -510,15 +505,14 @@ só adiciona um segundo ponto de entrada, não substitui o existente.
 ```
 
 `209715200` = 200 MiB — o teto pedido, configurável para operadores ajustarem por ambiente.
-`AccessKey`/`SecretKey` chegam por variável de ambiente/secret (`Minio__AccessKey` etc.), nunca
+`AccessKey`/`SecretKey` chegam por variável de ambiente/secret (`ObjectStorage__AccessKey` etc.), nunca
 hardcoded — mesmo padrão já usado hoje para `ConnectionStrings__Database`.
 
 Ambas as seções são obrigatórias (`Get<T>() ?? throw new InvalidOperationException(...)`), assim
 como `EmbeddingOptions`/`IndexerPathOptions` hoje.
 
-`docker-compose.yml` (`.eng/docker/docker-compose.yml`) ganha um serviço `minio` (imagem oficial
-`minio/minio`) para desenvolvimento local — hoje não existe nenhum serviço MinIO no repositório
-nem em nenhum repositório irmão da organização; este é o primeiro.
+`docker-compose.yml` (`.eng/docker/docker-compose.yml`) ganha um serviço `garage` (imagem oficial
+`dxflrs/garage`, configuração em `.eng/docker/garage/`) para desenvolvimento local.
 
 ---
 
@@ -533,7 +527,7 @@ tamanho máximo de arquivo aplicado via IHttpMaxRequestBodySizeFeature, configur
   um arquivo maior que o limite, contando bytes durante o streaming
 
 extensão do arquivo (.jsonl) validada a partir do nome da parte multipart antes de
-  iniciar o upload pro MinIO
+  iniciar o upload pro Garage
 
 chave do objeto sempre gerada pelo servidor (guid), nunca a partir do nome de
   arquivo enviado pelo cliente
@@ -545,9 +539,9 @@ limite de uploads simultâneos via Microsoft.AspNetCore.RateLimiting (Concurrenc
   aplicado só a este endpoint — além do limite, responde 429 em vez de aceitar
   indefinidamente e arriscar exaurir memória/conexões
 
-credenciais do MinIO só via configuração/secret, nunca hardcoded
+credenciais do Garage só via configuração/secret, nunca hardcoded
 
-TLS ao MinIO configurável (UseSsl)
+TLS ao Garage configurável (UseSsl)
 
 EnsureBucketExistsAsync roda no startup (fail-fast) — credenciais/bucket inválidos
   derrubam a aplicação na inicialização, não silenciosamente no primeiro upload
@@ -561,16 +555,16 @@ nenhuma extração/execução do conteúdo enviado além do parser CIIR já exis
 ## 12. Performance
 
 ```text
-upload: stream direto do corpo HTTP pro MinIO via MultipartReader — nunca materializa
+upload: stream direto do corpo HTTP pro Garage via MultipartReader — nunca materializa
   o arquivo inteiro em memória nem em um arquivo temporário intermediário
 
-download (Worker): stream direto do MinIO pro disco de staging — mesma lógica
+download (Worker): stream direto do Garage pro disco de staging — mesma lógica
 
 RunIndexation reaproveitado processa o JSONL de staging exatamente como processa
   hoje um path local — já é streaming/bounded por spec (01-Spec-inicial.md §61),
   nenhuma lógica nova de leitura precisa ser criada
 
-ingestão (endpoint) é barata e rápida (validar projectId + stream pro MinIO + um INSERT) —
+ingestão (endpoint) é barata e rápida (validar projectId + stream pro Garage + um INSERT) —
   pode aceitar uploads mesmo enquanto o Worker está processando um backlog grande, porque
   as duas etapas estão desacopladas pela tabela
 
@@ -611,11 +605,11 @@ registro "processing" travado há mais tempo que o timeout é reivindicado de no
 
 registro que esgota MaxRetryCount é marcado "failed" e não é mais reivindicado
 
-indexação bem-sucedida marca o upload "processed", apaga o objeto do MinIO e
+indexação bem-sucedida marca o upload "processed", apaga o objeto do Garage e
   vincula indexing_run_id
 
 indexação que termina em Failed/Cancelled marca o upload "failed" (sem retry) e
-  apaga o objeto do MinIO
+  apaga o objeto do Garage
 
 projeto removido entre o upload e o processamento marca o upload "failed" sem
   chamar RunIndexation
@@ -627,7 +621,7 @@ arquivo de staging local é sempre removido, mesmo quando a indexação falha
 ```
 
 Testes de integração devem usar PostgreSQL real (já é o padrão do repositório,
-`Testcontainers.PostgreSql`) e MinIO real via `Testcontainers.Minio` — não substituir por
+`Testcontainers.PostgreSql`) e Garage real via container do `Testcontainers` — não substituir por
 fakes/mocks na camada do adaptador, mesmo princípio já aplicado ao Postgres em
 `01-Spec-inicial.md` §60. Testes de caso de uso (`ProcessNextCiirUpload`, `SubmitCiirUpload`)
 continuam usando substitutos das portas (`NSubstitute`), como já é o padrão em
@@ -663,7 +657,7 @@ informando o `projectId` de um projeto já cadastrado, e recebe um `uploadId` co
 ### Validação de projeto
 
 Um `projectId` ausente retorna 400; um `projectId` que não existe retorna 404 — em nenhum dos
-dois casos o arquivo é armazenado no MinIO.
+dois casos o arquivo é armazenado no Garage.
 
 ### Armazenamento
 
@@ -678,7 +672,7 @@ fluxo por path já produziria para o mesmo conteúdo e projeto.
 
 ### Limpeza
 
-Ao final do processamento (sucesso ou falha), o objeto correspondente não existe mais no MinIO, e
+Ao final do processamento (sucesso ou falha), o objeto correspondente não existe mais no Garage, e
 o arquivo de staging local não existe mais em disco.
 
 ### Resiliência

@@ -25,7 +25,7 @@ Corpo (`application/json`):
 |---|---|---|
 | `200` | Token emitido | `{ "accessToken": "<jwt>", "tokenType": "Bearer", "expiresIn": 300 }` (`expiresIn` em segundos; omitido se o Keycloak não informar) |
 | `400` | `clientId` ou `clientSecret` ausente/em branco | `application/problem+json` |
-| `401` | O Keycloak recusou as credenciais (client inexistente, secret errada, client sem *Service accounts*) | `application/problem+json`, `detail` genérico (não repassa a resposta do Keycloak) |
+| `401` | O Keycloak recusou as credenciais (client inexistente, secret errada, client sem *Service accounts*) | sem corpo (só log da aplicação; a resposta do Keycloak não é repassada) |
 | `404` | Autenticação desligada (`Keycloak:Enabled = false`): não há token a emitir | sem corpo |
 | `502` | O Keycloak está inacessível, deu timeout ou respondeu algo inválido | `application/problem+json` |
 
