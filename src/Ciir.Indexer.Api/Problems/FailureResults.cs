@@ -16,12 +16,26 @@ public static class FailureResults
     /// <param name="failure">The failure to translate, whose <c>Code</c> encodes the target HTTP status.</param>
     /// <param name="context">The current request's <see cref="HttpContext"/>, used for the Problem Details <c>instance</c> field.</param>
     /// <returns>
-    /// A body-less 404 for a <c>"404-..."</c> code; otherwise an RFC 7807
-    /// <c>application/problem+json</c> result at the encoded status.
+    /// A body-less 401 (logged) for a <c>"401-..."</c> code, a body-less 404 for a <c>"404-..."</c>
+    /// code; otherwise an RFC 7807 <c>application/problem+json</c> result at the encoded status.
     /// </returns>
     public static IActionResult ToActionResult(this Failure failure, HttpContext context)
     {
         var status = ParseStatus(failure.Code);
+
+        if (status == StatusCodes.Status401Unauthorized)
+        {
+            // No response body (csharp-api): the reason goes to the application log only.
+            context.RequestServices?.GetService<ILoggerFactory>()
+                ?.CreateLogger(typeof(FailureResults).FullName!)
+                .LogWarning(
+                    "Answered {Method} {Path} with 401: {Code} - {Message}",
+                    context.Request.Method,
+                    context.Request.Path.Value,
+                    failure.Code,
+                    failure.Message);
+            return new UnauthorizedResult();
+        }
 
         if (status == StatusCodes.Status404NotFound)
         {

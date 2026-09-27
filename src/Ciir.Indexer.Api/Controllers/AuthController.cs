@@ -36,7 +36,7 @@ public sealed class AuthController : ControllerBase
     /// <param name="cancellationToken">Propagates request cancellation.</param>
     /// <returns>
     /// <c>200 OK</c> with a <see cref="TokenResponse"/>; <c>400</c> Problem Details when
-    /// <c>clientId</c>/<c>clientSecret</c> is missing; <c>401</c> Problem Details when the realm
+    /// <c>clientId</c>/<c>clientSecret</c> is missing; a body-less <c>401</c> when the realm
     /// refuses the credentials; <c>502</c> Problem Details when the realm cannot be reached or answers
     /// with something unusable; a body-less <c>404</c> when authentication is turned off.
     /// </returns>
@@ -44,7 +44,7 @@ public sealed class AuthController : ControllerBase
     [AllowAnonymous]
     [ProducesResponseType<TokenResponse>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
-    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status502BadGateway, "application/problem+json")]
     public async Task<IActionResult> CreateTokenAsync([FromBody] TokenRequest request, CancellationToken cancellationToken)

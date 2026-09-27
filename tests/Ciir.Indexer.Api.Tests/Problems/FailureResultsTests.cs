@@ -18,6 +18,16 @@ public sealed class FailureResultsTests
         result.ShouldBeOfType<NotFoundResult>();
     }
 
+    [Fact]
+    public void ToActionResult_401CodedFailure_ReturnsBodylessUnauthorized()
+    {
+        var failure = new Failure("401-invalid-client", "The credentials were refused.");
+
+        var result = failure.ToActionResult(BuildHttpContext());
+
+        result.ShouldBeOfType<UnauthorizedResult>();
+    }
+
     [Theory]
     [InlineData("400-path-required", StatusCodes.Status400BadRequest)]
     [InlineData("403-path-not-allowed", StatusCodes.Status403Forbidden)]

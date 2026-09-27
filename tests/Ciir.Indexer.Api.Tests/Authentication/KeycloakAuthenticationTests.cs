@@ -40,7 +40,7 @@ public sealed class KeycloakAuthenticationTests
     }
 
     [Fact]
-    public async Task KeycloakConfigured_RequestWithoutToken_IsRejectedWithABearerChallengeAndProblemDetails()
+    public async Task KeycloakConfigured_RequestWithoutToken_IsRejectedWithABearerChallengeAndNoBody()
     {
         using var host = await KeycloakTestHost.StartAsync(Enabled);
 
@@ -48,10 +48,7 @@ public sealed class KeycloakAuthenticationTests
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         response.Headers.WwwAuthenticate.ToString().ShouldBe("Bearer");
-        response.Content.Headers.ContentType?.MediaType.ShouldBe("application/problem+json");
-        var body = await response.Content.ReadAsStringAsync();
-        body.ShouldContain("\"status\":401");
-        body.ShouldContain(KeycloakTestHost.ProtectedEndpoint);
+        (await response.Content.ReadAsStringAsync()).ShouldBeEmpty();
     }
 
     [Fact]

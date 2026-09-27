@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Ciir.Indexer.Api.Authentication;
@@ -8,6 +7,8 @@ namespace Ciir.Indexer.Api.Authentication;
 /// <summary>Registers Keycloak-issued JWT bearer authentication (auth spec, "Keycloak configurado").</summary>
 public static class KeycloakAuthenticationExtensions
 {
+    private const string ChallengeLoggerCategory = "Ciir.Indexer.Api.Authentication.Challenge";
+
     /// <summary>
     /// Requires a valid Keycloak access token on every endpoint by default: registers the JWT bearer
     /// scheme against the realm and sets the authorization fallback policy to "authenticated user",
@@ -56,7 +57,7 @@ public static class KeycloakAuthenticationExtensions
                     ValidateAudience = options.Audience.Length > 0,
                     ValidAudience = options.Audience.Length > 0 ? options.Audience : null,
                 };
-                bearer.Events = new JwtBearerEvents { OnChallenge = WriteProblemDetailsAsync };
+                bearer.Events = new JwtBearerEvents { OnChallenge = RejectAsync };
             });
 
         services.AddAuthorization(authorization =>
@@ -65,20 +66,26 @@ public static class KeycloakAuthenticationExtensions
         return services;
     }
 
-    // Replaces the handler's default body-less 401 with the same application/problem+json shape
-    // every other client error in this API uses. The detail is deliberately generic: it must not
-    // reveal why a token was rejected (signature, issuer, expiry, ...).
-    private static Task WriteProblemDetailsAsync(JwtBearerChallengeContext context)
+    // A body-less 401 (csharp-api: 401/403/404/5xx carry no response body - only application logs).
+    // The bare "Bearer" challenge and the empty body deliberately reveal nothing about why a token
+    // was rejected (signature, issuer, expiry, ...); the reason goes to the log instead.
+    private static Task RejectAsync(JwtBearerChallengeContext context)
     {
         context.HandleResponse();
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         context.Response.Headers.WWWAuthenticate = JwtBearerDefaults.AuthenticationScheme;
 
-        return Results.Problem(
-            type: $"https://httpstatuses.io/{StatusCodes.Status401Unauthorized}",
-            title: ReasonPhrases.GetReasonPhrase(StatusCodes.Status401Unauthorized),
-            detail: "A valid access token is required. Send it in the 'Authorization: Bearer <token>' header.",
-            statusCode: StatusCodes.Status401Unauthorized,
-            instance: context.Request.Path)
-            .ExecuteAsync(context.HttpContext);
+        context.HttpContext.RequestServices
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger(ChallengeLoggerCategory)
+            .LogWarning(
+                context.AuthenticateFailure,
+                "Rejected {Method} {Path} with 401: {Error} {ErrorDescription}",
+                context.Request.Method,
+                context.Request.Path.Value,
+                context.Error ?? "no bearer token",
+                context.ErrorDescription);
+
+        return Task.CompletedTask;
     }
 }

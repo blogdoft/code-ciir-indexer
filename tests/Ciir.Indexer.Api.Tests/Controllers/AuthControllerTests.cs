@@ -45,19 +45,29 @@ public sealed class AuthControllerTests
         ok.Value.ShouldBe(new TokenResponse("the-jwt", "Bearer", 300));
     }
 
-    [Theory]
-    [InlineData("401-invalid-client", StatusCodes.Status401Unauthorized)]
-    [InlineData("502-token-endpoint-unavailable", StatusCodes.Status502BadGateway)]
-    public async Task CreateTokenAsync_FailedIssuance_ReturnsTheProblemAtTheEncodedStatus(string code, int expectedStatus)
+    [Fact]
+    public async Task CreateTokenAsync_RealmRefusesTheCredentials_ReturnsBodylessUnauthorized()
     {
         _tokenClient
             .RequestTokenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Result<KeycloakToken>.FromFailure(new Failure(code, "some detail")));
+            .Returns(Result<KeycloakToken>.FromFailure(new Failure("401-invalid-client", "some detail")));
+
+        var result = await CreateSut(_tokenClient).CreateTokenAsync(new TokenRequest("client", "secret"), CancellationToken.None);
+
+        result.ShouldBeOfType<UnauthorizedResult>();
+    }
+
+    [Fact]
+    public async Task CreateTokenAsync_RealmUnavailable_ReturnsTheProblemAtTheEncodedStatus()
+    {
+        _tokenClient
+            .RequestTokenAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Result<KeycloakToken>.FromFailure(new Failure("502-token-endpoint-unavailable", "some detail")));
 
         var result = await CreateSut(_tokenClient).CreateTokenAsync(new TokenRequest("client", "secret"), CancellationToken.None);
 
         var objectResult = result.ShouldBeOfType<ObjectResult>();
-        objectResult.StatusCode.ShouldBe(expectedStatus);
+        objectResult.StatusCode.ShouldBe(StatusCodes.Status502BadGateway);
         objectResult.Value.ShouldBeOfType<ProblemDetails>().Detail.ShouldBe("some detail");
     }
 
