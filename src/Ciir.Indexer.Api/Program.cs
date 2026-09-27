@@ -2,6 +2,7 @@ using BlogDoFT.Libs.Api.OpenTelemetry.Extensions;
 using BlogDoFT.Libs.WarmUp.Extensions;
 using Ciir.Indexer.Api.Authentication;
 using Ciir.Indexer.Api.Controllers;
+using Ciir.Indexer.Api.Logging;
 using Ciir.Indexer.Api.OpenApi;
 using Ciir.Indexer.Api.Uploads;
 using Ciir.Indexer.Api.WarmUp;
@@ -19,10 +20,9 @@ using OpenTelemetry.Resources;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// All logs are structured JSON on stdout - the only formatter registered, so nothing can fall
-// back to human-readable text regardless of environment/configuration.
-builder.Logging.ClearProviders();
-builder.Logging.AddJsonConsole();
+// All logs are structured JSON on stdout - the only sink registered, so nothing can fall back to
+// human-readable text regardless of environment/configuration.
+builder.AddStructuredLogging();
 
 try
 {
@@ -175,13 +175,12 @@ catch (Exception ex)
     // Configuration and database-connectivity problems (missing/invalid settings,
     // ConfigurationValidationException, DatabaseUnavailableException, host bind failures, ...) are
     // unrecoverable at startup: log why as structured JSON and terminate rather than serve traffic
-    // in a broken state. The console logger writes from a background queue, and Environment.Exit
-    // terminates the process without waiting for it - so the factory is disposed (which drains the
-    // queue) before exiting, otherwise the message below would be lost.
-    using (var loggerFactory = LoggerFactory.Create(logging => logging.AddJsonConsole()))
+    // in a broken state. Environment.Exit terminates the process without running finalizers, so the
+    // logger is disposed (which flushes it) before exiting.
+    using (var logger = StructuredLoggingExtensions.CreateBootstrapLogger())
     {
-        loggerFactory.CreateLogger("Ciir.Indexer.Api.Program")
-            .LogCritical(ex, "Application failed to start and will terminate.");
+        logger.ForContext("SourceContext", "Ciir.Indexer.Api.Program")
+            .Fatal(ex, "Application failed to start and will terminate.");
     }
 
     Environment.Exit(1);
