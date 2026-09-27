@@ -1,5 +1,8 @@
 # Uploads-only ingestion: remove the local-path endpoint, add upload registration
 
+> **Atualização:** o object storage passou de MinIO para **Garage** (S3-compatível); onde este documento diz
+> "MinIO" ou `mc cp`, leia "object storage" / qualquer cliente S3. Ver `02-upload-ciir-minio.md`.
+
 **Status: concluído.** `POST /api/indexations` (the original local-filesystem-path entry point,
 spec §2/§33/§40/§42) is removed. The CIIR upload flow (`02-upload-ciir-minio.md`) is now the only
 way to get a file indexed, via two entry points:

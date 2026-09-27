@@ -135,8 +135,8 @@ public sealed class CiirUploadsController : ControllerBase
     /// <summary>Registers a CIIR JSONL file already placed directly in object storage.</summary>
     /// <remarks>
     /// For files too large to push through <c>POST /api/ciir-uploads</c>'s own request body: upload
-    /// the <c>.jsonl</c> file directly to this service's configured MinIO bucket yourself (e.g. via
-    /// <c>mc cp</c>), then call this endpoint with the object key you uploaded it under. The
+    /// the <c>.jsonl</c> file directly to this service's configured object storage bucket yourself (e.g. via
+    /// <c>aws s3 cp</c>), then call this endpoint with the object key you uploaded it under. The
     /// object's existence is verified before registering it, so a typo in <c>objectKey</c> fails
     /// immediately rather than leaving a pending upload that can never be processed. From here on,
     /// this behaves exactly like <c>POST /api/ciir-uploads</c> - poll

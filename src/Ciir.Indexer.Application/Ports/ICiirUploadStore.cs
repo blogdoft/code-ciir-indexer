@@ -12,8 +12,8 @@ public interface ICiirUploadStore
 {
     /// <summary>Creates a new upload row in <see cref="CiirUploadStatus.Pending"/>.</summary>
     /// <param name="projectId">The already-registered project this file will be indexed into.</param>
-    /// <param name="bucket">The MinIO bucket the file was stored in.</param>
-    /// <param name="objectKey">The MinIO object key the file was stored under.</param>
+    /// <param name="bucket">The object storage bucket the file was stored in.</param>
+    /// <param name="objectKey">The object storage key the file was stored under.</param>
     /// <param name="cancellationToken">Propagates request cancellation.</param>
     Task<CiirUpload> CreateAsync(
         long projectId, string bucket, string objectKey, CancellationToken cancellationToken = default);
@@ -36,7 +36,7 @@ public interface ICiirUploadStore
     /// Marks as permanently <see cref="CiirUploadStatus.Failed"/> every upload stuck in
     /// <see cref="CiirUploadStatus.Processing"/> past <paramref name="stuckProcessingTimeout"/> that
     /// has already exhausted <paramref name="maxRetryCount"/> - these are never claimed again
-    /// (upload spec §8, step 1). Returned so the caller can also delete their now-orphaned MinIO
+    /// (upload spec §8, step 1). Returned so the caller can also delete their now-orphaned object storage
     /// objects.
     /// </summary>
     /// <param name="stuckProcessingTimeout">How long a row may stay in <see cref="CiirUploadStatus.Processing"/> before being considered abandoned.</param>

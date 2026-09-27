@@ -6,7 +6,7 @@ namespace Ciir.Indexer.Application.UseCases;
 
 /// <summary>
 /// Registers a CIIR file the caller has already placed directly in object storage (e.g. via
-/// <c>mc cp</c> or another S3-compatible client) - the entry point for files too large to push
+/// <c>aws s3 cp</c> or another S3-compatible client) - the entry point for files too large to push
 /// through <see cref="SubmitCiirUpload"/>'s own HTTP request body. Creates the same
 /// <see cref="CiirUpload"/> row <see cref="SubmitCiirUpload"/> does, so the existing background
 /// worker (<see cref="ProcessNextCiirUpload"/>) picks it up exactly the same way - the only
@@ -34,7 +34,7 @@ public sealed class RegisterCiirUpload
     /// </param>
     /// <param name="objectKey">
     /// The key the file was already stored under in this service's configured upload bucket - the
-    /// caller must have uploaded it there themselves (directly to MinIO) before calling this.
+    /// caller must have uploaded it there themselves (directly to the object storage) before calling this.
     /// </param>
     /// <param name="cancellationToken">Propagates request cancellation.</param>
     public async Task<Result<CiirUpload>> ExecuteAsync(

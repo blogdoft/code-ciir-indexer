@@ -6,7 +6,7 @@ namespace Ciir.Indexer.Core;
 /// <summary>
 /// One CIIR file received via <c>POST /api/ciir-uploads</c> (upload spec §6). This is a queue/blob
 /// lifecycle entity, separate from <see cref="IndexingRun"/>: it tracks whether the file is sitting
-/// in MinIO, being processed, or done - the actual indexation progress/counters live on the
+/// in object storage, being processed, or done - the actual indexation progress/counters live on the
 /// <see cref="IndexingRun"/> it eventually creates (<see cref="IndexingRunId"/>).
 /// </summary>
 public sealed record CiirUpload
@@ -52,8 +52,8 @@ public sealed record CiirUpload
     /// <summary>Validates and creates a <see cref="CiirUpload"/>.</summary>
     /// <param name="id">The upload's identity.</param>
     /// <param name="projectId">The already-registered project this file will be indexed into.</param>
-    /// <param name="bucket">The MinIO bucket the file was stored in.</param>
-    /// <param name="objectKey">The MinIO object key the file was stored under.</param>
+    /// <param name="bucket">The object storage bucket the file was stored in.</param>
+    /// <param name="objectKey">The object storage key the file was stored under.</param>
     /// <param name="status">The upload's current lifecycle state.</param>
     /// <param name="createdAt">When the upload row was created.</param>
     /// <param name="processingStartedAt">When the worker last claimed this upload, if any.</param>

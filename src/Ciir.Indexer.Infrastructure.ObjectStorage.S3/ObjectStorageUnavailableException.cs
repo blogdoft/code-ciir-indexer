@@ -1,6 +1,6 @@
-namespace Ciir.Indexer.Infrastructure.ObjectStorage.Minio;
+namespace Ciir.Indexer.Infrastructure.ObjectStorage.S3;
 
-/// <summary>MinIO could not be reached, or an object storage operation failed.</summary>
+/// <summary>The object storage could not be reached, or an operation against it failed.</summary>
 public sealed class ObjectStorageUnavailableException : Exception
 {
     public ObjectStorageUnavailableException(string message, Exception inner)

@@ -53,13 +53,15 @@ data:
   Observability__OtlpExporterOptions__Endpoint: "http://otel-collector.observability.svc.cluster.local:4318/v1/traces"
   Observability__OtlpExporterOptions__Protocol: "HttpProtobuf"
   # CIIR upload endpoint (POST /api/ciir-uploads, upload spec §5/§10) - object storage for
-  # uploaded CIIR files pending indexation. Endpoint uses the in-cluster Service DNS (this app
-  # runs inside the cluster) rather than the minio-api.home.arpa Ingress used for external/local
-  # access. AccessKey/SecretKey come from code-ciir-minio-secrets (see deployment.yaml) - a
-  # least-privilege user scoped only to the "ciir-uploads" bucket, not the MinIO root user.
-  Minio__Endpoint: "minio.minio.svc.cluster.local:9000"
-  Minio__UseSsl: "false"
-  Minio__BucketName: "ciir-uploads"
+  # uploaded CIIR files pending indexation, served by Garage (S3-compatible). Endpoint uses the
+  # in-cluster Service DNS (this app runs inside the cluster) rather than the garage-api.home.arpa
+  # Ingress used for external/local access. Region must match Garage's s3_region ("garage").
+  # AccessKey/SecretKey come from code-ciir-garage-secrets (see deployment.yaml) - a dedicated
+  # key (allowed to create the "ciir-uploads" bucket), not an admin credential.
+  ObjectStorage__Endpoint: "garage.garage.svc.cluster.local:3900"
+  ObjectStorage__Region: "garage"
+  ObjectStorage__UseSsl: "false"
+  ObjectStorage__BucketName: "ciir-uploads"
   # Keycloak authentication (.specs/05-keycloak-auth.md) - off by default: the API stays open until
   # Keycloak__Enabled is "true". The other Keycloak__* values are IGNORED while it is off, so filling
   # them in does not protect anything by itself. Enabled=true makes every endpoint require a Bearer

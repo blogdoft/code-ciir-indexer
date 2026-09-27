@@ -3,13 +3,14 @@
 Reads CIIR JSONL, generates embeddings, and upserts documents/relations into PostgreSQL +
 pgvector. See `CLAUDE.md` for architecture and tooling conventions, and `.specs/` for the
 detailed functional specs (`01-Spec-inicial.md` for the core indexer, `02-upload-ciir-minio.md`
-for the MinIO upload endpoint, `04-uploads-only.md` for why the old local-path endpoint is gone,
+for the object-storage upload endpoint (originally specified against MinIO, now Garage),
+`04-uploads-only.md` for why the old local-path endpoint is gone,
 `05-keycloak-auth.md` for the optional Keycloak authentication, `06-token-gateway.md` for the
 token endpoint non-interactive clients use to get a token).
 
 ## Indexing a CIIR file
 
-There is no local-filesystem-path entry point - every CIIR file reaches indexation through MinIO,
+There is no local-filesystem-path entry point - every CIIR file reaches indexation through the object storage (Garage),
 one of two ways:
 
 - **`POST /api/ciir-uploads`** (multipart, `projectId` + `ciirFile` fields): the default path for
@@ -17,8 +18,8 @@ one of two ways:
   file into its `ciir-uploads` bucket for you.
 - **`POST /api/ciir-uploads/register`** (JSON, `{"projectId": "...", "objectKey": "..."}"`): for a
   file too large for a single HTTP request. Upload it directly to the same bucket yourself first
-  (e.g. `mc cp big-ciir.jsonl local/ciir-uploads/<objectKey>` using the least-privilege
-  `ciir-indexer-uploader` credentials below, or a presigned URL), then call this endpoint with the
+  (e.g. `aws --endpoint-url <garage s3 url> --region garage s3 cp big-ciir.jsonl s3://ciir-uploads/<objectKey>`
+  using the `ciir-indexer-uploader` credentials below, or a presigned URL), then call this endpoint with the
   key you uploaded it under. The object's existence is checked before it's registered.
 
 Either way, poll `GET /api/ciir-uploads/{uploadId}` for status, then `GET /api/indexations/{indexationId}`
@@ -110,69 +111,75 @@ TOKEN=$(curl -s -X POST https://blogdoft.home.arpa/code-brain/api/indexer/auth/t
 curl -H "Authorization: Bearer $TOKEN" https://blogdoft.home.arpa/code-brain/api/indexer/projects
 ```
 
-## MinIO — least-privilege upload user
+## Garage — upload key
 
-`POST /api/ciir-uploads` stores incoming CIIR files in a MinIO bucket (`ciir-uploads`) until the
-background worker picks them up. The application should never authenticate to MinIO with the
-cluster's root credentials - it only needs to read/write/delete objects in that one bucket, so it
-runs as a dedicated MinIO user restricted to exactly that.
+`POST /api/ciir-uploads` stores incoming CIIR files in a Garage bucket (`ciir-uploads`) until the
+background worker picks them up. Garage is S3-compatible, so the adapter
+(`Ciir.Indexer.Infrastructure.ObjectStorage.S3`) is the plain AWS S3 SDK pointed at Garage with
+path-style addressing and the Garage region (`garage`, the server's `s3_region`). The application
+should never authenticate with an admin credential, so it runs with a dedicated key.
 
-### Prerequisites
-
-- `mc` (MinIO Client) to run the admin commands below. MinIO stopped publishing prebuilt binaries
-  on `dl.min.io` and no longer allows anonymous pulls of `minio/minio`/`minio/mc` from Docker Hub
-  - pull the client image from Quay.io instead and extract the binary:
-  ```bash
-  cid=$(docker create quay.io/minio/mc:latest)
-  docker cp "$cid:/usr/bin/mc" ~/.local/bin/mc
-  docker rm "$cid"
-  chmod +x ~/.local/bin/mc
-  ```
-- `kubectl` access to the cluster running MinIO, with permission to read the `minio-credentials`
-  Secret and create a Job in the `minio` namespace.
-
-### Creating the user
-
-Rather than typing the MinIO root password into a local `mc alias set` (which would mean an agent
-or shell history handling that credential directly), the bootstrap runs as a one-off Kubernetes
-Job **inside** the cluster: the Job pod reads `minio-credentials` (root user/password) via
-`secretKeyRef` and never prints them, then uses the official `mc` client to:
-
-1. Create the `ciir-uploads` bucket if it doesn't already exist.
-2. Create a MinIO user `ciir-indexer-uploader` with a freshly generated password.
-3. Create and attach a policy granting that user `GetObject`/`PutObject`/`DeleteObject`/
-   `ListBucket` on `arn:aws:s3:::ciir-uploads` and `arn:aws:s3:::ciir-uploads/*` only - nothing
-   else in the MinIO install.
-
-The Job manifest (with the generated password already filled in) needs to be applied by hand -
-this repository's automation intentionally does not get permission to create IAM-granting
-resources on its own:
+### Local development
 
 ```bash
-kubectl apply -f .eng/k8s/ciir-minio-bootstrap-job.yaml
-kubectl -n minio wait --for=condition=complete job/ciir-minio-user-bootstrap --timeout=60s
-kubectl -n minio logs job/ciir-minio-user-bootstrap
-kubectl -n minio delete job/ciir-minio-user-bootstrap
+docker compose -f .eng/docker/docker-compose.yml up -d garage
+.eng/docker/garage/init.sh      # once: node layout, dev access key, "ciir-uploads" bucket
 ```
+
+`appsettings.json` already points at `localhost:3900` with the development key that script
+imports. Any S3 client works for the bring-your-own-upload flow, e.g.
+`aws --endpoint-url http://localhost:3900 --region garage s3 cp ciir.jsonl s3://ciir-uploads/<key>`.
+
+### Creating the key in the cluster
+
+Garage is administered with its own CLI, run inside the pod. These commands change the cluster, so
+run them yourself (this repository's automation intentionally does not get permission to create
+credentials on its own):
+
+```bash
+garage() { kubectl -n garage exec -i garage-0 -c garage -- /garage "$@"; }
+
+garage key create ciir-indexer-uploader
+garage key allow --create-bucket ciir-indexer-uploader
+garage key info --show-secret ciir-indexer-uploader   # Key ID and Secret key for the Secret
+```
+
+The key is allowed to create buckets, so there is no bucket to create by hand: at startup the app
+checks `ciir-uploads` is reachable and creates it if missing, and the creating key becomes its
+owner. Two things follow from Garage's model: a bucket created through the S3 API only gets a
+*local alias* of that key (it is invisible by name to `garage bucket info` and other keys - use
+`garage bucket list` for its ID), and `create-bucket` lets the key create any bucket, not just
+this one. To trade that convenience for least privilege, skip `key allow --create-bucket`, create
+the bucket yourself (`garage bucket create ciir-uploads`) and grant the key access with
+`garage bucket allow --read --write ciir-uploads --key ciir-indexer-uploader` - then a missing
+bucket fails startup fast instead of being created.
 
 ### Where the credentials live afterward
 
-- **Local development**: in this project's `dotnet user-secrets` (`Minio:Endpoint`,
-  `Minio:UseSsl`, `Minio:BucketName`, `Minio:AccessKey`, `Minio:SecretKey`) - never in
-  `appsettings.json`. Inspect with `dotnet user-secrets list --project src/Ciir.Indexer.Api`.
-- **Cluster deployment**: `.eng/k8s/code-ciir-minio-secrets.yaml` documents the `Secret` shape
-  `deployment.yaml` expects (`code-ciir-minio-secrets`, keys `access-key`/`secret-key`). That file
-  contains real credentials, is git-ignored, and is **not** applied automatically - decide how you
-  want it into the cluster (`kubectl apply -f`, sealed-secrets, sops, ...) and do that yourself.
-  Non-secret settings (`Minio__Endpoint`, `Minio__UseSsl`, `Minio__BucketName`) are already wired
-  into `.eng/k8s/configmap.yaml`.
+- **Local development**: in this project's `dotnet user-secrets` if you override the defaults
+  (`ObjectStorage:Endpoint`, `ObjectStorage:Region`, `ObjectStorage:UseSsl`,
+  `ObjectStorage:BucketName`, `ObjectStorage:AccessKey`, `ObjectStorage:SecretKey`) - never in a
+  committed file other than the throwaway development key in `appsettings.json`. Inspect with
+  `dotnet user-secrets list --project src/Ciir.Indexer.Api`. Any old `Minio:*` entries are no longer
+  read and can be removed.
+- **Cluster deployment**: `.eng/k8s/code-ciir-garage-secrets.yaml` documents the `Secret` shape
+  `deployment.yaml` expects (`code-ciir-garage-secrets`, keys `access-key`/`secret-key`). Fill it
+  with the key printed above; the file is git-ignored and is **not** applied automatically - decide
+  how you want it into the cluster (`kubectl apply -f`, sealed-secrets, sops, ...) and do that
+  yourself. Non-secret settings (`ObjectStorage__Endpoint`, `ObjectStorage__Region`,
+  `ObjectStorage__UseSsl`, `ObjectStorage__BucketName`) are already wired into
+  `.eng/k8s/configmap.yaml`.
 
-### Rotating the password
+### Rotating the key
+
+Garage keys have no editable secret: create a new one, switch the Secret over, then delete the old
+one.
 
 ```bash
-mc admin user add local ciir-indexer-uploader '<new password>'
+garage key create ciir-indexer-uploader-2
+garage key allow --create-bucket ciir-indexer-uploader-2
+# if the bucket was created by the old key it only has that key as owner (local alias): create the
+# bucket yourself with a global alias and `bucket allow` the new key before switching (see above)
+# update code-ciir-garage-secrets and restart the deployment, then:
+garage key delete --yes ciir-indexer-uploader
 ```
-run the same way (inside a Job, or via `mc` locally if you're comfortable typing the root
-password yourself) - `mc admin user add` on an existing user updates its password rather than
-failing. Update `dotnet user-secrets` and `code-ciir-minio-secrets.yaml`/the cluster Secret to
-match.

@@ -40,26 +40,22 @@ services:
     volumes:
       - ciir-indexer-ollama-data:/root/.ollama
 
-  # MinIO for the CIIR upload endpoint (POST /api/ciir-uploads). Matches the default
-  # appsettings.json: Endpoint=localhost:9000, AccessKey/SecretKey=minioadmin, UseSsl=false.
-  # Console UI: http://localhost:9001 (same credentials).
-  # Image pulled from Quay.io, not Docker Hub: MinIO no longer allows anonymous pulls of
-  # "minio/minio" there and only publishes the open-source AGPL image on Quay.io.
-  minio:
-    image: quay.io/minio/minio:latest
-    container_name: ciir-indexer-minio
+  # Garage (S3-compatible object storage) for the CIIR upload endpoint (POST /api/ciir-uploads).
+  # Matches the default appsettings.json: Endpoint=localhost:3900, Region=garage, UseSsl=false,
+  # BucketName=ciir-uploads. Garage starts empty - run .eng/docker/garage/init.sh once after the
+  # first start to assign the node layout, import the development access key and create the bucket.
+  garage:
+    image: dxflrs/garage:v2.4.1
+    container_name: ciir-indexer-garage
     restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "3900:3900"
     volumes:
-      - ciir-indexer-miniodata:/data
+      - ./garage/garage.toml:/etc/garage.toml:ro
+      - ciir-indexer-garage-meta:/var/lib/garage/meta
+      - ciir-indexer-garage-data:/var/lib/garage/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "/garage", "status"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -67,4 +63,5 @@ services:
 volumes:
   ciir-indexer-pgdata:
   ciir-indexer-ollama-data:
-  ciir-indexer-miniodata:
+  ciir-indexer-garage-meta:
+  ciir-indexer-garage-data:

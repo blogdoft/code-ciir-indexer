@@ -8,7 +8,7 @@ namespace Ciir.Indexer.Api.Uploads;
 /// cycle processes at most one upload via <see cref="ProcessNextCiirUpload"/>, retrying immediately
 /// while there is a backlog and waiting <see cref="UploadOptions.PollingIntervalSeconds"/> once
 /// there is nothing eligible. The sole path from a stored CIIR file to a completed indexation - an
-/// upload's file already sits in MinIO regardless of whether this process is running, so this
+/// upload's file already sits in the object storage regardless of whether this process is running, so this
 /// queue is durable rather than in-memory (upload spec §2).
 /// </summary>
 public sealed class CiirUploadWorker : BackgroundService
@@ -56,7 +56,7 @@ public sealed class CiirUploadWorker : BackgroundService
         }
         catch (Exception ex)
         {
-            // A single upload's infrastructure failure (MinIO/database blip) must never crash the
+            // A single upload's infrastructure failure (object storage/database blip) must never crash the
             // whole host - the row stays "processing" and the stuck-timeout mechanism (upload spec
             // §8) will reclaim it on a later cycle, bounded by MaxRetryCount.
             _logger.LogError(ex, "Unexpected failure while processing a CIIR upload.");

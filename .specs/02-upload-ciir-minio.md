@@ -1,5 +1,11 @@
 # Upload de CIIR via MinIO e Worker de Processamento Assíncrono
 
+> **Atualização:** o object storage passou de MinIO para **Garage** (S3-compatível). O adaptador agora é
+> `Ciir.Indexer.Infrastructure.ObjectStorage.S3` (AWSSDK.S3, path-style, região `garage`), a seção de
+> configuração é `ObjectStorage` (`Endpoint`, `Region`, `AccessKey`, `SecretKey`, `UseSsl`, `BucketName`) e os
+> testes de integração usam um container Garage. Onde este documento diz "MinIO", leia "object storage";
+> `mc cp` vira qualquer cliente S3 (ex.: `aws s3 cp --endpoint-url ...`). O comportamento descrito não mudou.
+
 ## 1. Objetivo
 
 Adicionar um segundo ponto de entrada de indexação ao `code-ciir-indexer`, complementar ao já

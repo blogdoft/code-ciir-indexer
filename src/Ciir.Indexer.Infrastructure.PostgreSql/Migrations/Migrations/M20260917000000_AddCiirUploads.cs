@@ -5,7 +5,7 @@ namespace Ciir.Indexer.Infrastructure.PostgreSql.Migrations.Migrations;
 /// <summary>
 /// Adds <c>ciir_uploads</c> (upload spec §6): the durable queue backing <c>POST
 /// /api/ciir-uploads</c>. Deliberately separate from <c>indexing_runs</c> - this table tracks the
-/// upload/blob lifecycle (pending/processing/processed/failed, retry count, MinIO location), never
+/// upload/blob lifecycle (pending/processing/processed/failed, retry count, object storage location), never
 /// indexation progress, which stays on the <c>indexing_run</c> the worker creates once it starts
 /// processing an upload. <c>project_id</c> is NOT NULL - unlike the local-path flow, this endpoint
 /// never creates a project, so every upload row always references one that already exists. As with

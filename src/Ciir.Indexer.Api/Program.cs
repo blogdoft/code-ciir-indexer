@@ -10,7 +10,7 @@ using Ciir.Indexer.Application.Ports;
 using Ciir.Indexer.Infrastructure.Embeddings.Abstractions;
 using Ciir.Indexer.Infrastructure.Embeddings.Ollama;
 using Ciir.Indexer.Infrastructure.Embeddings.OpenAI;
-using Ciir.Indexer.Infrastructure.ObjectStorage.Minio;
+using Ciir.Indexer.Infrastructure.ObjectStorage.S3;
 using Ciir.Indexer.Infrastructure.PostgreSql;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -96,10 +96,10 @@ try
     builder.Services.AddSingleton<OrphanedIndexingRunReconciler>();
     builder.Services.AddWarmUp();
 
-    // --- MinIO object storage for CIIR uploads (upload spec §5/§10/§11). ---
-    var minioOptions = builder.Configuration.GetSection(MinioOptions.SectionName).Get<MinioOptions>()
-        ?? throw new InvalidOperationException($"Missing required configuration section '{MinioOptions.SectionName}'.");
-    builder.Services.AddMinioObjectStorage(minioOptions);
+    // --- S3-compatible object storage (Garage) for CIIR uploads (upload spec §5/§10/§11). ---
+    var objectStorageOptions = builder.Configuration.GetSection(S3Options.SectionName).Get<S3Options>()
+        ?? throw new InvalidOperationException($"Missing required configuration section '{S3Options.SectionName}'.");
+    builder.Services.AddS3ObjectStorage(objectStorageOptions);
 
     var uploadOptions = builder.Configuration.GetSection(UploadOptions.SectionName).Get<UploadOptions>() ?? new UploadOptions();
     builder.Services.AddRateLimiter(options =>
@@ -115,15 +115,15 @@ try
     var indexingOptions = builder.Configuration.GetSection(IndexingOptions.SectionName).Get<IndexingOptions>() ?? new IndexingOptions();
     builder.Services.AddCiirIndexerApplication(indexingOptions);
 
-    builder.Services.AddCiirUploadsFeature(minioOptions, uploadOptions);
+    builder.Services.AddCiirUploadsFeature(objectStorageOptions, uploadOptions);
 
     var app = builder.Build();
 
     // Fail fast on invalid embedding configuration rather than waiting for the first request.
     app.Services.GetRequiredService<IEmbeddingGenerator>();
 
-    // Fail fast on an unreachable/misconfigured MinIO bucket rather than on the first upload.
-    await app.Services.GetRequiredService<IObjectStorage>().EnsureBucketExistsAsync(minioOptions.BucketName);
+    // Fail fast on an unreachable/misconfigured object storage bucket rather than on the first upload.
+    await app.Services.GetRequiredService<IObjectStorage>().EnsureBucketExistsAsync(objectStorageOptions.BucketName);
 
     // Always mapped (not gated to Development) so Swagger is reachable in this cluster too - both
     // routes live under "api/indexer" since that's the only prefix the blogdoft.home.arpa ingress
