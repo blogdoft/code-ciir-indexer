@@ -125,6 +125,9 @@ try
     // Fail fast on an unreachable/misconfigured object storage bucket rather than on the first upload.
     await app.Services.GetRequiredService<IObjectStorage>().EnsureBucketExistsAsync(objectStorageOptions.BucketName);
 
+    // Ahead of everything else so every request is covered; /health is skipped.
+    app.UseStructuredRequestLogging();
+
     // Always mapped (not gated to Development) so Swagger is reachable in this cluster too - both
     // routes live under "api/indexer" since that's the only prefix the blogdoft.home.arpa ingress
     // forwards to this service (see .eng/k8s/ingress.yaml). The swagger.json URL is relative

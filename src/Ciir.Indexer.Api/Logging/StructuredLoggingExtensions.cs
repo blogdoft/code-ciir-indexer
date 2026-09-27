@@ -1,4 +1,5 @@
 using Serilog;
+using Serilog.Events;
 using Serilog.Templates;
 
 namespace Ciir.Indexer.Api.Logging;
@@ -15,6 +16,8 @@ internal static class StructuredLoggingExtensions
     // "LogLevel": "Information" instead, which Loki's level detection ignores, so every line showed
     // up as "unknown". "..@p" spreads the message-template properties (and scope/enricher ones) as
     // top-level fields; "@tr"/"@sp" are the current Activity's trace and span ids.
+    private const string HealthPath = "/health";
+
     private const string JsonTemplate =
         "{ {timestamp: @t, " +
         "level: if @l = 'Verbose' then 'trace' " +
@@ -34,9 +37,24 @@ internal static class StructuredLoggingExtensions
             .ReadFrom.Configuration(context.Configuration)
             .ReadFrom.Services(services)
             .Enrich.FromLogContext()
+            .Enrich.WithMachineName()
+            .Enrich.WithEnvironmentName()
             .WriteTo.Console(new ExpressionTemplate(JsonTemplate)));
 
         return builder;
+    }
+
+    /// <summary>
+    /// Logs one line per HTTP request, skipping the Kubernetes probe. Requests that end in an
+    /// exception or a 5xx are logged as errors (the exception itself goes in <c>exception</c>).
+    /// Register it ahead of everything that should be covered.
+    /// </summary>
+    /// <param name="app">The web application.</param>
+    /// <returns>The same <paramref name="app"/>, for chaining.</returns>
+    public static WebApplication UseStructuredRequestLogging(this WebApplication app)
+    {
+        app.UseSerilogRequestLogging(options => options.GetLevel = RequestLogLevel);
+        return app;
     }
 
     /// <summary>
@@ -49,4 +67,18 @@ internal static class StructuredLoggingExtensions
         new LoggerConfiguration()
             .WriteTo.Console(new ExpressionTemplate(JsonTemplate))
             .CreateLogger();
+
+    // /health is below any configured Serilog:MinimumLevel, so the kubelet's periodic probe hits are
+    // never written - the same effect as skipping the log entirely, without special-casing the sink.
+    private static LogEventLevel RequestLogLevel(HttpContext httpContext, double elapsedMs, Exception? exception)
+    {
+        if (httpContext.Request.Path.StartsWithSegments(HealthPath))
+        {
+            return LogEventLevel.Verbose;
+        }
+
+        return exception is not null || httpContext.Response.StatusCode >= StatusCodes.Status500InternalServerError
+            ? LogEventLevel.Error
+            : LogEventLevel.Information;
+    }
 }
