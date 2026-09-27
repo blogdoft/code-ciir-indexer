@@ -99,7 +99,9 @@ jobs:
         run: |
           args=(code-ciir-indexer.slnx --output ciir-output --no-banner --no-progress --fail-on-error)
           if [ "${{ github.event_name }}" = "push" ]; then
-            args+=(--send "$CIIR_BASE_URL" --projectId "$CIIR_PROJECT_ID" --clientId "$CIIR_CLIENT_ID" --clientSecret "$CIIR_CLIENT_SECRET")
+            # --insecure (BlogDoFT.Ciir >= 0.5.0): this container doesn't trust the private CA
+            # that signs blogdoft.home.arpa, so certificate validation would fail.
+            args+=(--send "$CIIR_BASE_URL" --projectId "$CIIR_PROJECT_ID" --clientId "$CIIR_CLIENT_ID" --clientSecret "$CIIR_CLIENT_SECRET" --insecure)
           fi
           ciir "${args[@]}"
 
