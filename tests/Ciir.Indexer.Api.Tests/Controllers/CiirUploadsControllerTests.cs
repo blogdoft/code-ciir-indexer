@@ -30,7 +30,6 @@ public sealed class CiirUploadsControllerTests
             "MyProject",
             gitUrl: null,
             gitRawUrl: null,
-            EmbeddingModel.Create("bge-m3", 1024).Value,
             publicId: ExistingProjectPublicId,
             id: ExistingProjectId).Value;
         _projectStore.GetByPublicIdAsync(ExistingProjectPublicId, Arg.Any<CancellationToken>()).Returns(project);

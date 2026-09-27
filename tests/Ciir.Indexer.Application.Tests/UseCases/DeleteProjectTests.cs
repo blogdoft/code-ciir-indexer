@@ -39,7 +39,6 @@ public sealed class DeleteProjectTests
         "proj",
         gitUrl: null,
         gitRawUrl: null,
-        EmbeddingModel.Create("bge-m3", 1024).Value,
         publicId: Guid.NewGuid(),
         id: 1).Value;
 

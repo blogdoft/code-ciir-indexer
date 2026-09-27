@@ -102,7 +102,6 @@ public sealed class RegisterCiirUploadTests
         "MyProject",
         gitUrl: null,
         gitRawUrl: null,
-        EmbeddingModel.Create("bge-m3", 1024).Value,
         publicId: ProjectPublicId,
         id: InternalProjectId).Value;
 

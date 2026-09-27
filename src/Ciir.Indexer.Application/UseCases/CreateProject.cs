@@ -20,13 +20,11 @@ public sealed class CreateProject
 
     public async Task<Result<Project>> ExecuteAsync(
         string? name,
-        string? embeddingModel,
-        int? embeddingDimensions,
         string? gitUrl,
         string? gitRawUrl,
         CancellationToken cancellationToken = default)
     {
-        var validation = ProjectValidation.ValidateFields(name, embeddingModel, embeddingDimensions);
+        var validation = ProjectValidation.ValidateFields(name);
         if (validation is not null)
         {
             return validation;
@@ -41,7 +39,6 @@ public sealed class CreateProject
             name!,
             gitUrl,
             gitRawUrl,
-            EmbeddingModel.Create(embeddingModel!, embeddingDimensions!.Value).Value,
             cancellationToken);
     }
 }

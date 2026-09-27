@@ -5,9 +5,7 @@ namespace Ciir.Indexer.Core;
 
 /// <summary>
 /// The logical grouping of CIIR documents (spec §9/§11). <see cref="Name"/> is caller-supplied per
-/// <c>POST /api/indexations</c> request, not derived from any CIIR record; <see
-/// cref="EmbeddingModel"/> records which embedding configuration is currently authoritative for
-/// this project's vectors.
+/// <c>POST /api/indexations</c> request, not derived from any CIIR record.
 /// </summary>
 public sealed record Project
 {
@@ -31,8 +29,6 @@ public sealed record Project
 
     public string? GitRawUrl { get; init; }
 
-    public required EmbeddingModel EmbeddingModel { get; init; }
-
     public required DateTime CreatedAt { get; init; }
 
     public required DateTime UpdatedAt { get; init; }
@@ -41,7 +37,6 @@ public sealed record Project
     /// <param name="name">The project's caller-supplied logical identity; must not be empty.</param>
     /// <param name="gitUrl">The project's git repository URL, if supplied by the caller.</param>
     /// <param name="gitRawUrl">The project's git raw-content URL, if supplied by the caller.</param>
-    /// <param name="embeddingModel">The embedding model/dimensions currently configured for it.</param>
     /// <param name="publicId">The identifier exposed to API callers in place of the internal id.</param>
     /// <param name="id">The persisted internal id, or 0 for a project not yet persisted.</param>
     /// <param name="createdAt">The persisted creation timestamp, or null to stamp the current time.</param>
@@ -50,7 +45,6 @@ public sealed record Project
         string? name,
         string? gitUrl,
         string? gitRawUrl,
-        EmbeddingModel embeddingModel,
         Guid publicId,
         long id = 0,
         DateTime? createdAt = null,
@@ -64,7 +58,6 @@ public sealed record Project
             Name = name ?? string.Empty,
             GitUrl = gitUrl,
             GitRawUrl = gitRawUrl,
-            EmbeddingModel = embeddingModel,
             CreatedAt = createdAt ?? now,
             UpdatedAt = updatedAt ?? now,
         };
@@ -83,7 +76,6 @@ public sealed record Project
         public ProjectValidator()
         {
             RuleFor(project => project.Name).NotEmpty().MaximumLength(MaxNameLength);
-            RuleFor(project => project.EmbeddingModel).NotNull();
         }
     }
 }

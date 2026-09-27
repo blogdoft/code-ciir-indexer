@@ -40,7 +40,6 @@ public static class CiirUploadsServiceCollectionExtensions
             sp.GetRequiredService<IObjectStorage>(),
             sp.GetRequiredService<IProjectStore>(),
             sp.GetRequiredService<IIndexingRunStore>(),
-            sp.GetRequiredService<IEmbeddingGenerator>(),
             sp.GetRequiredService<RunIndexation>(),
             uploadOptions,
             sp.GetRequiredService<ILogger<ProcessNextCiirUpload>>()));

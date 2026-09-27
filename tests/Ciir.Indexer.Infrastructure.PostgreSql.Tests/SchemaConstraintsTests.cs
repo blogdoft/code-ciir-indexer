@@ -1,5 +1,4 @@
 using Ciir.Indexer.Application.Ports;
-using Ciir.Indexer.Core;
 using Dapper;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -30,7 +29,7 @@ public sealed class SchemaConstraintsTests
     public async Task Ciir_documents_RawDuplicateInsert_ViolatesTheProjectCiirIdUniqueConstraint()
     {
         var project = await _projectStore.EnsureProjectAsync(
-            TestData.NewProjectName(), null, null, EmbeddingModel.Create("bge-m3", PostgreSqlFixture.EmbeddingDimensions).Value);
+            TestData.NewProjectName(), null, null);
         var document = TestData.BuildDocument();
         await _documentWriter.UpsertBatchAsync([TestData.BuildUpsert(document)], project.Id, Guid.NewGuid());
 
@@ -49,7 +48,7 @@ public sealed class SchemaConstraintsTests
     public async Task Ciir_relations_DeletingReferencedDocument_CascadesToDeleteTheRelation()
     {
         var project = await _projectStore.EnsureProjectAsync(
-            TestData.NewProjectName(), null, null, EmbeddingModel.Create("bge-m3", PostgreSqlFixture.EmbeddingDimensions).Value);
+            TestData.NewProjectName(), null, null);
         var source = TestData.BuildDocument();
         var target = TestData.BuildDocument();
         await _documentWriter.UpsertBatchAsync(

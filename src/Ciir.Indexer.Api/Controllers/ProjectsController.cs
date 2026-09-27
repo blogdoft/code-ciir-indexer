@@ -116,8 +116,8 @@ public sealed class ProjectsController : ControllerBase
     }
 
     /// <summary>Create a project.</summary>
-    /// <remarks>Creates a new project with the given name, embedding model and embedding dimensions.</remarks>
-    /// <param name="request">The name, embedding model and embedding dimensions of the project to create.</param>
+    /// <remarks>Creates a new project with the given name and optional git URLs.</remarks>
+    /// <param name="request">The name and optional git URLs of the project to create.</param>
     /// <param name="cancellationToken">Propagates request cancellation.</param>
     /// <returns>
     /// <c>201 Created</c> with the persisted <see cref="ProjectResponse"/>, including its generated
@@ -132,8 +132,6 @@ public sealed class ProjectsController : ControllerBase
     {
         var result = await _createProject.ExecuteAsync(
             request.Name,
-            request.EmbeddingModel,
-            request.EmbeddingDimensions,
             NullIfBlank(request.GitUrl),
             NullIfBlank(request.GitRawUrl),
             cancellationToken);
@@ -149,7 +147,7 @@ public sealed class ProjectsController : ControllerBase
     /// Identifier of the project to update, corresponding to the id field returned by
     /// <c>GET /api/projects</c>. Must be a valid GUID; any other format results in a 400 response.
     /// </param>
-    /// <param name="request">The project's new name, embedding model and embedding dimensions.</param>
+    /// <param name="request">The project's new name and git URLs.</param>
     /// <param name="cancellationToken">Propagates request cancellation.</param>
     /// <returns>
     /// <c>200 OK</c> with the updated <see cref="ProjectResponse"/>; <c>400</c> Problem Details when
@@ -175,8 +173,6 @@ public sealed class ProjectsController : ControllerBase
         var result = await _updateProject.ExecuteAsync(
             id,
             request.Name,
-            request.EmbeddingModel,
-            request.EmbeddingDimensions,
             NullIfBlank(request.GitUrl),
             NullIfBlank(request.GitRawUrl),
             cancellationToken);
@@ -232,8 +228,6 @@ public sealed class ProjectsController : ControllerBase
     private static ProjectResponse ToResponse(Project project) => new(
         project.PublicId,
         project.Name,
-        project.EmbeddingModel.Name,
-        project.EmbeddingModel.Dimensions,
         project.GitUrl,
         project.GitRawUrl,
         project.CreatedAt,

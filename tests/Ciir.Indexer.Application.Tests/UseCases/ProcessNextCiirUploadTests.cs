@@ -139,7 +139,6 @@ public sealed class ProcessNextCiirUploadTests
         "MyProject",
         gitUrl: null,
         gitRawUrl: null,
-        EmbeddingModel.Create("bge-m3", 2).Value,
         publicId: Guid.NewGuid(),
         id: id).Value;
 
@@ -168,9 +167,6 @@ public sealed class ProcessNextCiirUploadTests
         StubNothingEligible();
         _uploadStore.ClaimNextAsync(Arg.Any<TimeSpan>(), Arg.Any<int>(), Arg.Any<CancellationToken>()).Returns(upload);
         _projectStore.GetByIdAsync(upload.ProjectId, Arg.Any<CancellationToken>()).Returns(project);
-        _projectStore
-            .EnsureProjectAsync(project.Name, project.GitUrl, project.GitRawUrl, Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>())
-            .Returns(project);
         _runStore.CreateAsync(Arg.Any<string>(), project.Id, Arg.Any<CancellationToken>()).Returns(run);
         _runStore.GetAsync(run.Id, Arg.Any<CancellationToken>()).Returns(run);
     }
@@ -191,7 +187,6 @@ public sealed class ProcessNextCiirUploadTests
             _objectStorage,
             _projectStore,
             _runStore,
-            _embeddingGenerator,
             runIndexation,
             _options,
             NullLogger<ProcessNextCiirUpload>.Instance);

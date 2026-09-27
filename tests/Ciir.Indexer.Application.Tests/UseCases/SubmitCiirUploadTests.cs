@@ -74,7 +74,6 @@ public sealed class SubmitCiirUploadTests
             "MyProject",
             gitUrl: null,
             gitRawUrl: null,
-            EmbeddingModel.Create("bge-m3", 1024).Value,
             publicId: ProjectPublicId,
             id: InternalProjectId).Value;
         _projectStore.GetByPublicIdAsync(ProjectPublicId, Arg.Any<CancellationToken>()).Returns(project);

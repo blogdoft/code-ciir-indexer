@@ -17,13 +17,11 @@ public sealed class UpdateProject
     public async Task<Result<Project>> ExecuteAsync(
         Guid id,
         string? name,
-        string? embeddingModel,
-        int? embeddingDimensions,
         string? gitUrl,
         string? gitRawUrl,
         CancellationToken cancellationToken = default)
     {
-        var validation = ProjectValidation.ValidateFields(name, embeddingModel, embeddingDimensions);
+        var validation = ProjectValidation.ValidateFields(name);
         if (validation is not null)
         {
             return validation;
@@ -45,7 +43,6 @@ public sealed class UpdateProject
             name!,
             gitUrl,
             gitRawUrl,
-            EmbeddingModel.Create(embeddingModel!, embeddingDimensions!.Value).Value,
             cancellationToken);
 
         return updated is null

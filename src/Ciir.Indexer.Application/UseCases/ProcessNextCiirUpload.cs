@@ -18,7 +18,6 @@ public sealed class ProcessNextCiirUpload
     private readonly IObjectStorage _objectStorage;
     private readonly IProjectStore _projectStore;
     private readonly IIndexingRunStore _runStore;
-    private readonly IEmbeddingGenerator _embeddingGenerator;
     private readonly RunIndexation _runIndexation;
     private readonly UploadOptions _options;
     private readonly ILogger<ProcessNextCiirUpload> _logger;
@@ -28,7 +27,6 @@ public sealed class ProcessNextCiirUpload
         IObjectStorage objectStorage,
         IProjectStore projectStore,
         IIndexingRunStore runStore,
-        IEmbeddingGenerator embeddingGenerator,
         RunIndexation runIndexation,
         UploadOptions options,
         ILogger<ProcessNextCiirUpload> logger)
@@ -37,7 +35,6 @@ public sealed class ProcessNextCiirUpload
         _objectStorage = objectStorage;
         _projectStore = projectStore;
         _runStore = runStore;
-        _embeddingGenerator = embeddingGenerator;
         _runIndexation = runIndexation;
         _options = options;
         _logger = logger;
@@ -88,17 +85,10 @@ public sealed class ProcessNextCiirUpload
         {
             await _objectStorage.DownloadToFileAsync(upload.Bucket, upload.ObjectKey, stagingPath, cancellationToken);
 
-            // Refreshes the project's stored embedding model/dimensions if the configured provider
-            // changed since it was registered (spec §55) - never creates a new project, since the
-            // name already exists.
-            var embeddingModel = EmbeddingModel.Create(_embeddingGenerator.Model, _embeddingGenerator.Dimensions).Value;
-            var refreshedProject = await _projectStore.EnsureProjectAsync(
-                project.Name, project.GitUrl, project.GitRawUrl, embeddingModel, cancellationToken);
-
-            var run = await _runStore.CreateAsync(stagingPath, refreshedProject.Id, cancellationToken);
+            var run = await _runStore.CreateAsync(stagingPath, project.Id, cancellationToken);
             await _uploadStore.MarkIndexingRunAsync(upload.Id, run.Id, cancellationToken);
 
-            await _runIndexation.ExecuteAsync(run.Id, stagingPath, refreshedProject.Id, cancellationToken);
+            await _runIndexation.ExecuteAsync(run.Id, stagingPath, project.Id, cancellationToken);
 
             var finished = await _runStore.GetAsync(run.Id, cancellationToken);
             await _objectStorage.DeleteAsync(upload.Bucket, upload.ObjectKey, cancellationToken);

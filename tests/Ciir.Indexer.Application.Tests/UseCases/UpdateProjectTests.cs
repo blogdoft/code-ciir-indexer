@@ -18,10 +18,10 @@ public sealed class UpdateProjectTests
         _projectStore.GetByPublicIdAsync(existing.PublicId, Arg.Any<CancellationToken>()).Returns(existing);
         _projectStore.ExistsByNameAsync("renamed", existing.Id, Arg.Any<CancellationToken>()).Returns(false);
         _projectStore
-            .UpdateAsync(existing.Id, "renamed", null, null, Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>())
+            .UpdateAsync(existing.Id, "renamed", null, null, Arg.Any<CancellationToken>())
             .Returns(updated);
 
-        var result = await CreateSut().ExecuteAsync(existing.PublicId, "renamed", "bge-m3", 1024, null, null);
+        var result = await CreateSut().ExecuteAsync(existing.PublicId, "renamed", null, null);
 
         result.IsSuccess.ShouldBeTrue();
         result.Value.ShouldBe(updated);
@@ -33,7 +33,7 @@ public sealed class UpdateProjectTests
         var missingId = Guid.NewGuid();
         _projectStore.GetByPublicIdAsync(missingId, Arg.Any<CancellationToken>()).Returns((Project?)null);
 
-        var result = await CreateSut().ExecuteAsync(missingId, "proj", "bge-m3", 1024, null, null);
+        var result = await CreateSut().ExecuteAsync(missingId, "proj", null, null);
 
         result.IsFailure.ShouldBeTrue();
         result.Failure.Code.ShouldBe("404-project-not-found");
@@ -46,7 +46,7 @@ public sealed class UpdateProjectTests
         _projectStore.GetByPublicIdAsync(existing.PublicId, Arg.Any<CancellationToken>()).Returns(existing);
         _projectStore.ExistsByNameAsync("taken", existing.Id, Arg.Any<CancellationToken>()).Returns(true);
 
-        var result = await CreateSut().ExecuteAsync(existing.PublicId, "taken", "bge-m3", 1024, null, null);
+        var result = await CreateSut().ExecuteAsync(existing.PublicId, "taken", null, null);
 
         result.IsFailure.ShouldBeTrue();
         result.Failure.Code.ShouldBe("409-name-conflict");
@@ -57,7 +57,7 @@ public sealed class UpdateProjectTests
     [InlineData("")]
     public async Task ExecuteAsync_MissingName_ReturnsNameRequired(string? name)
     {
-        var result = await CreateSut().ExecuteAsync(Guid.NewGuid(), name, "bge-m3", 1024, null, null);
+        var result = await CreateSut().ExecuteAsync(Guid.NewGuid(), name, null, null);
 
         result.IsFailure.ShouldBeTrue();
         result.Failure.Code.ShouldBe("400-name-required");
@@ -68,7 +68,6 @@ public sealed class UpdateProjectTests
         "proj",
         gitUrl: null,
         gitRawUrl: null,
-        EmbeddingModel.Create("bge-m3", 1024).Value,
         publicId: Guid.NewGuid(),
         id: 1).Value;
 

@@ -12,20 +12,17 @@ namespace Ciir.Indexer.Application.Ports;
 public interface IProjectStore
 {
     /// <summary>
-    /// Creates the project if it does not exist yet, or updates its git metadata and embedding
-    /// model/dimensions if they changed since the last run - a model change forces re-embedding of
-    /// the whole project even when <c>embeddingTextHash</c> is unchanged (spec §55).
+    /// Creates the project if it does not exist yet, or updates its git metadata if it changed
+    /// since the last run.
     /// </summary>
     /// <param name="name">The project's logical identity, supplied by the API caller.</param>
     /// <param name="gitUrl">The project's git repository URL, if supplied by the caller.</param>
     /// <param name="gitRawUrl">The project's git raw-content URL, if supplied by the caller.</param>
-    /// <param name="embeddingModel">The embedding model/dimensions currently configured for it.</param>
     /// <param name="cancellationToken">Propagates run cancellation.</param>
     Task<Project> EnsureProjectAsync(
         string name,
         string? gitUrl,
         string? gitRawUrl,
-        EmbeddingModel embeddingModel,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -79,13 +76,11 @@ public interface IProjectStore
     /// <param name="name">The new project's name.</param>
     /// <param name="gitUrl">The project's git repository URL, if supplied by the caller.</param>
     /// <param name="gitRawUrl">The project's git raw-content URL, if supplied by the caller.</param>
-    /// <param name="embeddingModel">The embedding model/dimensions this project's documents are (or will be) embedded with.</param>
     /// <param name="cancellationToken">Propagates request cancellation.</param>
     Task<Project> InsertAsync(
         string name,
         string? gitUrl,
         string? gitRawUrl,
-        EmbeddingModel embeddingModel,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -96,14 +91,12 @@ public interface IProjectStore
     /// <param name="name">The project's new name.</param>
     /// <param name="gitUrl">The project's new git repository URL.</param>
     /// <param name="gitRawUrl">The project's new git raw-content URL.</param>
-    /// <param name="embeddingModel">The project's new embedding model/dimensions.</param>
     /// <param name="cancellationToken">Propagates request cancellation.</param>
     Task<Project?> UpdateAsync(
         long id,
         string name,
         string? gitUrl,
         string? gitRawUrl,
-        EmbeddingModel embeddingModel,
         CancellationToken cancellationToken = default);
 
     /// <summary>Deletes the project identified by <paramref name="id"/>. Returns whether a row was deleted.</summary>

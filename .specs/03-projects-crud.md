@@ -28,8 +28,11 @@ existente aqui (que já inclui `gitUrl`/`gitRawUrl`, ausentes na versão origina
   inválido.
 - `GET /api/projects/{projectId}` — 200 com o projeto; 400 se `projectId` não for inteiro
   positivo; 404 sem corpo se não existir.
-- `POST /api/projects` — cria um projeto diretamente (`name`, `embeddingModel`,
-  `embeddingDimensions` obrigatórios; `gitUrl`/`gitRawUrl` opcionais). Ao contrário de
+- `POST /api/projects` — cria um projeto diretamente (`name` obrigatório; `gitUrl`/`gitRawUrl`
+  opcionais). Atualização 2026-09-27: `embeddingModel`/`embeddingDimensions` foram removidos do
+  projeto (colunas dropadas em `projects` pela migration `20260927000000`); o modelo de embedding
+  é configuração do deploy (`Embeddings:*`) e continua registrado por documento em
+  `ciir_documents`. Ao contrário de
   `EnsureProjectAsync` (usado pelo fluxo de indexação), um nome duplicado aqui é 409, não um
   upsert silencioso. 201 com `Location` para `GET /api/projects/{id}`.
 - `PUT /api/projects/{projectId}` — substitui todos os campos (replace completo). 200 com o

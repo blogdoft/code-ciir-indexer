@@ -80,10 +80,10 @@ public sealed class ProjectsControllerTests
         var created = BuildProject(1);
         _projectStore.ExistsByNameAsync("proj", null, Arg.Any<CancellationToken>()).Returns(false);
         _projectStore
-            .InsertAsync("proj", null, null, Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>())
+            .InsertAsync("proj", null, null, Arg.Any<CancellationToken>())
             .Returns(created);
 
-        var result = await CreateSut().CreateAsync(new ProjectCreateRequest("proj", "bge-m3", 1024), CancellationToken.None);
+        var result = await CreateSut().CreateAsync(new ProjectCreateRequest("proj"), CancellationToken.None);
 
         var createdAtRoute = result.ShouldBeOfType<CreatedAtRouteResult>();
         var body = createdAtRoute.Value.ShouldBeOfType<ProjectResponse>();
@@ -97,13 +97,13 @@ public sealed class ProjectsControllerTests
     {
         _projectStore.ExistsByNameAsync("proj", null, Arg.Any<CancellationToken>()).Returns(false);
         _projectStore
-            .InsertAsync("proj", null, null, Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>())
+            .InsertAsync("proj", null, null, Arg.Any<CancellationToken>())
             .Returns(BuildProject(1));
 
-        await CreateSut().CreateAsync(new ProjectCreateRequest("proj", "bge-m3", 1024, blank, blank), CancellationToken.None);
+        await CreateSut().CreateAsync(new ProjectCreateRequest("proj", blank, blank), CancellationToken.None);
 
         await _projectStore.Received(1).InsertAsync(
-            "proj", null, null, Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>());
+            "proj", null, null, Arg.Any<CancellationToken>());
     }
 
     [Theory]
@@ -114,14 +114,14 @@ public sealed class ProjectsControllerTests
         var existing = BuildProject(1);
         _projectStore.GetByPublicIdAsync(existing.PublicId, Arg.Any<CancellationToken>()).Returns(existing);
         _projectStore
-            .UpdateAsync(existing.Id, "proj", null, null, Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>())
+            .UpdateAsync(existing.Id, "proj", null, null, Arg.Any<CancellationToken>())
             .Returns(existing);
 
         await CreateSut().UpdateAsync(
-            existing.PublicId.ToString(), new ProjectUpdateRequest("proj", "bge-m3", 1024, blank, blank), CancellationToken.None);
+            existing.PublicId.ToString(), new ProjectUpdateRequest("proj", blank, blank), CancellationToken.None);
 
         await _projectStore.Received(1).UpdateAsync(
-            existing.Id, "proj", null, null, Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>());
+            existing.Id, "proj", null, null, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public sealed class ProjectsControllerTests
     {
         _projectStore.ExistsByNameAsync("proj", null, Arg.Any<CancellationToken>()).Returns(true);
 
-        var result = await CreateSut().CreateAsync(new ProjectCreateRequest("proj", "bge-m3", 1024), CancellationToken.None);
+        var result = await CreateSut().CreateAsync(new ProjectCreateRequest("proj"), CancellationToken.None);
 
         var objectResult = result.ShouldBeOfType<ObjectResult>();
         objectResult.StatusCode.ShouldBe(StatusCodes.Status409Conflict);
@@ -138,7 +138,7 @@ public sealed class ProjectsControllerTests
     [Fact]
     public async Task CreateAsync_MissingName_ReturnsBadRequestWithoutQueryingTheStore()
     {
-        var result = await CreateSut().CreateAsync(new ProjectCreateRequest(null, "bge-m3", 1024), CancellationToken.None);
+        var result = await CreateSut().CreateAsync(new ProjectCreateRequest(null), CancellationToken.None);
 
         var objectResult = result.ShouldBeOfType<ObjectResult>();
         objectResult.StatusCode.ShouldBe(StatusCodes.Status400BadRequest);
@@ -153,11 +153,11 @@ public sealed class ProjectsControllerTests
         _projectStore.GetByPublicIdAsync(existing.PublicId, Arg.Any<CancellationToken>()).Returns(existing);
         _projectStore.ExistsByNameAsync("renamed", existing.Id, Arg.Any<CancellationToken>()).Returns(false);
         _projectStore
-            .UpdateAsync(existing.Id, "renamed", null, null, Arg.Any<EmbeddingModel>(), Arg.Any<CancellationToken>())
+            .UpdateAsync(existing.Id, "renamed", null, null, Arg.Any<CancellationToken>())
             .Returns(updated);
 
         var result = await CreateSut().UpdateAsync(
-            existing.PublicId.ToString(), new ProjectUpdateRequest("renamed", "bge-m3", 1024), CancellationToken.None);
+            existing.PublicId.ToString(), new ProjectUpdateRequest("renamed"), CancellationToken.None);
 
         var ok = result.ShouldBeOfType<OkObjectResult>();
         var body = ok.Value.ShouldBeOfType<ProjectResponse>();
@@ -171,7 +171,7 @@ public sealed class ProjectsControllerTests
         _projectStore.GetByPublicIdAsync(unknownId, Arg.Any<CancellationToken>()).Returns((Project?)null);
 
         var result = await CreateSut().UpdateAsync(
-            unknownId.ToString(), new ProjectUpdateRequest("proj", "bge-m3", 1024), CancellationToken.None);
+            unknownId.ToString(), new ProjectUpdateRequest("proj"), CancellationToken.None);
 
         result.ShouldBeOfType<NotFoundResult>();
     }
@@ -180,7 +180,7 @@ public sealed class ProjectsControllerTests
     public async Task UpdateAsync_NonNumericId_ReturnsBadRequest()
     {
         var result = await CreateSut().UpdateAsync(
-            "not-a-guid", new ProjectUpdateRequest("proj", "bge-m3", 1024), CancellationToken.None);
+            "not-a-guid", new ProjectUpdateRequest("proj"), CancellationToken.None);
 
         var objectResult = result.ShouldBeOfType<ObjectResult>();
         objectResult.StatusCode.ShouldBe(StatusCodes.Status400BadRequest);
@@ -222,7 +222,6 @@ public sealed class ProjectsControllerTests
         $"Project{id}",
         gitUrl: null,
         gitRawUrl: null,
-        EmbeddingModel.Create("bge-m3", 1024).Value,
         publicId: Guid.NewGuid(),
         id: id).Value;
 

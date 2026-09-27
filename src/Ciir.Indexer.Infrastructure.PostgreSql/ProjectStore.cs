@@ -16,23 +16,19 @@ public sealed class ProjectStore : IProjectStore
     private const string ResultSet =
         """
         SELECT id AS "Id", public_id AS "PublicId", name AS "Name", git_url AS "GitUrl", git_raw_url AS "GitRawUrl",
-            embedding_model AS "EmbeddingModel", embedding_dimensions AS "EmbeddingDimensions",
             created_at AS "CreatedAt", updated_at AS "UpdatedAt"
         FROM projects
         """;
 
     private const string UpsertSql =
         """
-        INSERT INTO projects (public_id, name, git_url, git_raw_url, embedding_model, embedding_dimensions)
-        VALUES (@PublicId, @Name, @GitUrl, @GitRawUrl, @EmbeddingModel, @EmbeddingDimensions)
+        INSERT INTO projects (public_id, name, git_url, git_raw_url)
+        VALUES (@PublicId, @Name, @GitUrl, @GitRawUrl)
         ON CONFLICT (name) DO UPDATE SET
             git_url = EXCLUDED.git_url,
             git_raw_url = EXCLUDED.git_raw_url,
-            embedding_model = EXCLUDED.embedding_model,
-            embedding_dimensions = EXCLUDED.embedding_dimensions,
             updated_at = now()
         RETURNING id AS "Id", public_id AS "PublicId", name AS "Name", git_url AS "GitUrl", git_raw_url AS "GitRawUrl",
-            embedding_model AS "EmbeddingModel", embedding_dimensions AS "EmbeddingDimensions",
             created_at AS "CreatedAt", updated_at AS "UpdatedAt";
         """;
 
@@ -70,7 +66,6 @@ public sealed class ProjectStore : IProjectStore
         string name,
         string? gitUrl,
         string? gitRawUrl,
-        EmbeddingModel embeddingModel,
         CancellationToken cancellationToken = default)
     {
         await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
@@ -86,8 +81,6 @@ public sealed class ProjectStore : IProjectStore
                     Name = name,
                     GitUrl = gitUrl,
                     GitRawUrl = gitRawUrl,
-                    EmbeddingModel = embeddingModel.Name,
-                    EmbeddingDimensions = embeddingModel.Dimensions,
                 },
                 cancellationToken: cancellationToken)));
 
@@ -142,15 +135,13 @@ public sealed class ProjectStore : IProjectStore
         string name,
         string? gitUrl,
         string? gitRawUrl,
-        EmbeddingModel embeddingModel,
         CancellationToken cancellationToken = default)
     {
         const string Sql =
             """
-            INSERT INTO projects (public_id, name, git_url, git_raw_url, embedding_model, embedding_dimensions)
-            VALUES (@PublicId, @Name, @GitUrl, @GitRawUrl, @EmbeddingModel, @EmbeddingDimensions)
+            INSERT INTO projects (public_id, name, git_url, git_raw_url)
+            VALUES (@PublicId, @Name, @GitUrl, @GitRawUrl)
             RETURNING id AS "Id", public_id AS "PublicId", name AS "Name", git_url AS "GitUrl", git_raw_url AS "GitRawUrl",
-                embedding_model AS "EmbeddingModel", embedding_dimensions AS "EmbeddingDimensions",
                 created_at AS "CreatedAt", updated_at AS "UpdatedAt";
             """;
 
@@ -165,8 +156,6 @@ public sealed class ProjectStore : IProjectStore
                     Name = name,
                     GitUrl = gitUrl,
                     GitRawUrl = gitRawUrl,
-                    EmbeddingModel = embeddingModel.Name,
-                    EmbeddingDimensions = embeddingModel.Dimensions,
                 },
                 cancellationToken: cancellationToken)));
 
@@ -178,7 +167,6 @@ public sealed class ProjectStore : IProjectStore
         string name,
         string? gitUrl,
         string? gitRawUrl,
-        EmbeddingModel embeddingModel,
         CancellationToken cancellationToken = default)
     {
         const string Sql =
@@ -187,12 +175,9 @@ public sealed class ProjectStore : IProjectStore
             SET name = @Name,
                 git_url = @GitUrl,
                 git_raw_url = @GitRawUrl,
-                embedding_model = @EmbeddingModel,
-                embedding_dimensions = @EmbeddingDimensions,
                 updated_at = now()
             WHERE id = @Id
             RETURNING id AS "Id", public_id AS "PublicId", name AS "Name", git_url AS "GitUrl", git_raw_url AS "GitRawUrl",
-                embedding_model AS "EmbeddingModel", embedding_dimensions AS "EmbeddingDimensions",
                 created_at AS "CreatedAt", updated_at AS "UpdatedAt";
             """;
 
@@ -207,8 +192,6 @@ public sealed class ProjectStore : IProjectStore
                     Name = name,
                     GitUrl = gitUrl,
                     GitRawUrl = gitRawUrl,
-                    EmbeddingModel = embeddingModel.Name,
-                    EmbeddingDimensions = embeddingModel.Dimensions,
                 },
                 cancellationToken: cancellationToken)));
 
@@ -232,8 +215,6 @@ public sealed class ProjectStore : IProjectStore
         string Name,
         string? GitUrl,
         string? GitRawUrl,
-        string EmbeddingModel,
-        int EmbeddingDimensions,
         DateTime CreatedAt,
         DateTime UpdatedAt)
     {
@@ -244,7 +225,6 @@ public sealed class ProjectStore : IProjectStore
             Name,
             GitUrl,
             GitRawUrl,
-            global::Ciir.Indexer.Core.EmbeddingModel.Create(EmbeddingModel, EmbeddingDimensions).Value,
             PublicId,
             Id,
             DateTime.SpecifyKind(CreatedAt, DateTimeKind.Utc),
