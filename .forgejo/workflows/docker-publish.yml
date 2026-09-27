@@ -65,6 +65,44 @@ jobs:
           done
           exit 1
 
+  # Runs in parallel with `test` (no `needs`): analyzes this repository with the BlogDoFT.Ciir .NET
+  # tool (dogfooding - see ../code-csharp-ciir). On a tag push the resulting ciir.jsonl is also sent
+  # to the indexer; on PRs it only analyzes, so a PR never writes to the deployed indexer.
+  # CIIR_BASE_URL, CIIR_PROJECT_ID and CIIR_CLIENT_ID are repo/org variables; CIIR_CLIENT_SECRET is
+  # a repo secret (a confidential Keycloak client with Service accounts enabled).
+  ciir:
+    runs-on: self-hosted
+    container:
+      image: mcr.microsoft.com/dotnet/sdk:10.0
+    steps:
+      - name: Install Node.js
+        run: apt-get update && apt-get install -y --no-install-recommends nodejs
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install BlogDoFT.Ciir
+        run: |
+          dotnet tool install --global BlogDoFT.Ciir
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      # ciir does not restore; without obj/project.assets.json NuGet references stay unresolved.
+      - name: Restore
+        run: dotnet restore code-ciir-indexer.slnx
+
+      - name: Run BlogDoFT.Ciir
+        env:
+          CIIR_BASE_URL: ${{ vars.CIIR_BASE_URL }}
+          CIIR_PROJECT_ID: ${{ vars.CIIR_PROJECT_ID }}
+          CIIR_CLIENT_ID: ${{ vars.CIIR_CLIENT_ID }}
+          CIIR_CLIENT_SECRET: ${{ secrets.CIIR_CLIENT_SECRET }}
+        run: |
+          args=(code-ciir-indexer.slnx --output ciir-output --no-banner --no-progress --fail-on-error)
+          if [ "${{ github.event_name }}" = "push" ]; then
+            args+=(--send "$CIIR_BASE_URL" --projectId "$CIIR_PROJECT_ID" --clientId "$CIIR_CLIENT_ID" --clientSecret "$CIIR_CLIENT_SECRET")
+          fi
+          ciir "${args[@]}"
+
   publish:
     needs: test
     if: github.event_name == 'push'
