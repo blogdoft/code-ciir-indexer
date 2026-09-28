@@ -4,10 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-This repository is currently empty (greenfield). This file documents the intended purpose,
-architecture, and guidelines as agreed with the project owner, so that the first code written here
-follows the intended shape from the start rather than being retrofitted later — the same approach
-used to bootstrap the sibling `code-csharp-ciir` repository.
+In production behind the shared gateway `https://blogdoft.home.arpa/code-brain/api/indexer`. It is
+part of **code-brain**, together with `code-ciir-api` (query/RAG side, reads the same `code3rag`
+database) and `code-rag-front` (web UI).
 
 ## Purpose
 
@@ -28,13 +27,18 @@ CIIR documents already carry a precomputed `embeddingText` (plus `embeddingTextS
 
 ## Specifications
 
-No spec exists yet for this repository. Specs will be added under `.specs/` (the convention used
-in `code-csharp-ciir`) — **check there for requirements before starting new work once specs
-exist**, and treat this file's architecture/tooling decisions as constraints the spec must fit
-within, not the other way around. In particular, how CIIR's richer data — `relations` (e.g.
-`calls`), `symbol` info, `kind` — gets modeled in the database (plain JSON metadata vs. dedicated
-relational tables for the call graph) is an open question deferred to that spec; do not assume an
-answer without it.
+Functional specs live in `.specs/` — **check there for requirements before starting new work**,
+and keep them consistent with the code when behavior changes:
+
+- `01-Spec-inicial.md` — the core indexer (CIIR contract, schema, embeddings, relations, runs);
+- `02-upload-ciir-garage.md` — CIIR upload through Garage + background worker;
+- `03-projects-crud.md` — project CRUD (this service is the only writer of `projects`);
+- `04-uploads-only.md` — why the local-path entry point is gone;
+- `05-keycloak-auth.md` — optional Keycloak authentication;
+- `06-token-gateway.md` — client-credentials token endpoint.
+
+Treat this file's architecture/tooling decisions as constraints the specs must fit within, not
+the other way around.
 
 ## Architecture: Hexagonal (Ports & Adapters)
 
@@ -46,16 +50,14 @@ single project organized by folders:
 - **Application**: ports (e.g. `IEmbeddingGenerator`, `ICodeDocumentRepository`, `IInputResolver`)
   and the main use case (read → embed → upsert), orchestration only, no I/O logic of its own.
 - **Driving adapters** (trigger indexing runs):
-  - **CLI** — the first adapter.
-  - A future **Web API** driving adapter is plausible, matching `code-csharp-ciir`'s driving-side
-    shape — reuse the Application layer's use case rather than duplicating orchestration logic.
+  - **Web API** (`Ciir.Indexer.Api`) — REST endpoints plus the `CiirUploadWorker` background
+    service; reuse the Application layer's use cases rather than duplicating orchestration logic.
 - **Driven adapters** (things the core/application depend on, behind ports defined in Application):
-  - One project per embedding provider (OpenAI/OpenAI-compatible, Ollama, local ONNX, ...), each
-    independently swappable — this mirrors `code-indexer`'s proven
-    `IEmbeddingGenerator`/`IEmbeddingProviderFactory` seam; consult that repository as prior art
-    for the provider abstraction and its resolver pattern, but the exact provider set here is
-    still open.
-  - Persistence (Postgres/pgvector via Dapper).
+  - One project per embedding provider (`Embeddings.Ollama`, `Embeddings.OpenAI`, behind
+    `Embeddings.Abstractions`), each independently swappable — this mirrors `code-indexer`'s
+    `IEmbeddingGenerator`/`IEmbeddingProviderFactory` seam.
+  - Persistence (Postgres/pgvector via Dapper, FluentMigrator migrations).
+  - Object storage (`ObjectStorage.S3`, Garage through the AWS S3 SDK).
 
 When implementing new functionality, default to: define/extend a port in Application, implement
 the behavior in an adapter, keep adapters thin.
@@ -74,7 +76,7 @@ the behavior in an adapter, keep adapters thin.
 
 Before writing a new utility, a Dapper access pattern, a success/failure result type, or similar
 plumbing, **check whether a `BlogDoFT.Libs.*` package (by
-[ftathiago](https://www.nuget.org/profiles/ftathiago)) already covers it** — this ecosystem leans
+the BlogDoFT author on nuget.org) already covers it** — this ecosystem leans
 heavily on reusing these rather than hand-rolling equivalents:
 
 - `BlogDoFT.Libs.Extensions` — general-purpose utility extensions
@@ -98,8 +100,9 @@ Check nuget.org for the current versions and full list before adding a dependenc
 - If an analyzer produces a warning that is a false positive because it doesn't yet understand a
   newer C# language feature, **ask for permission before suppressing it** with a `#pragma warning
   disable` — don't add suppressions unilaterally.
-- Git hooks should be managed with **Husky.Net**, with a pre-commit hook that runs `dotnet format`
-  (and only that) — don't add build/test steps to it, matching `code-indexer`/`code-csharp-ciir`.
+- Git hooks are managed with **Husky.Net** (`.husky/`): the pre-commit hook runs `dotnet format`
+  on staged `*.cs` files (and only that) — don't add build/test steps to it, matching
+  `code-indexer`/`code-csharp-ciir`.
 
 ## Commits
 
@@ -117,21 +120,16 @@ summary line.
 
 ## Development commands
 
-No solution/project files exist yet. Once scaffolded, the project is expected to follow standard
-.NET CLI conventions:
-
 ```bash
 # Build
-dotnet build
+dotnet build code-ciir-indexer.slnx
 
 # Run all tests
-dotnet test
+dotnet test code-ciir-indexer.slnx
 
 # Run a single test (by fully-qualified name or filter expression)
 dotnet test --filter "FullyQualifiedName~ClassName.MethodName"
 
-# Run the CLI adapter
-dotnet run --project <CliProjectPath> -- <args>
+# Run the API locally (Postgres/Garage from .eng/docker/docker-compose.yml)
+dotnet run --project src/Ciir.Indexer.Api
 ```
-
-Update this section with the actual project/solution paths once the solution is scaffolded.

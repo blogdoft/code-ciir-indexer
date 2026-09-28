@@ -1,65 +1,65 @@
 # Projects CRUD
 
-**Status: concluído.** `GET /api/projects[?name=][&page=][&page_size=]` (paginado),
-`GET /api/projects/{projectId}`, `POST /api/projects`, `PUT /api/projects/{projectId}` e
-`DELETE /api/projects/{projectId}` estão implementados.
+**Status: concluído.** `GET /api/indexer/projects[?name=][&page=][&page_size=]` (paginado),
+`GET /api/indexer/projects/{projectId}`, `POST /api/indexer/projects`,
+`PUT /api/indexer/projects/{projectId}` e `DELETE /api/indexer/projects/{projectId}` estão
+implementados.
 
 ## Contexto
 
-`code-ciir-api` (`code3rag`) expunha CRUD completo de `projects` mesmo não sendo dona da tabela -
-este serviço (`code-ciir-indexer`) já era o único escritor de fato, via
-`IProjectStore.EnsureProjectAsync` (chamado implicitamente por `POST /api/indexations` e
-`POST /api/ciir-uploads`, spec's "Atualização — Identidade de projeto informada pelo chamador").
-Ter dois serviços com CRUD independente sobre a mesma tabela, sem mecanismo de coordenação, era um
-risco conscientemente aceito e documentado em `code-ciir-api/.specs/03-projects-endpoint.md`
-("Reversão"). Este trabalho move o CRUD completo para cá - o dono real da tabela - e reduz
-`code-ciir-api`'s `/api/v1/projects` de volta a somente leitura (`GET`), eliminando o
-double-writer.
+`code-ciir-api` (`code3rag`) chegou a expor CRUD completo de `projects` mesmo não sendo dona da
+tabela. Ter dois serviços com CRUD independente sobre a mesma tabela, sem mecanismo de
+coordenação, era um risco conscientemente aceito e documentado em
+`code-ciir-api/.specs/03-projects-endpoint.md`. Este trabalho moveu o CRUD completo para cá — o
+dono real da tabela — e `code-ciir-api` deixou de expor rotas REST de projetos, eliminando o
+duplo escritor. Este serviço é o único que cria, altera e exclui projetos; o upload de CIIR
+(`02-upload-ciir-garage.md`) só referencia um projeto já cadastrado.
 
 ## Contrato
 
-Mesma forma de contrato de `code-ciir-api`'s antigo `/api/v1/projects`, adaptada ao `Project` já
-existente aqui (que já inclui `gitUrl`/`gitRawUrl`, ausentes na versão original de
-`code-ciir-api`):
+JSON em `camelCase`. O identificador exposto é o `public_id` (UUIDv7) do projeto, chamado `id` no
+corpo e `{projectId}` na rota; a chave numérica interna nunca sai do serviço.
 
-- `GET /api/projects?name=&page=&page_size=` — paginado (page zero-based, default 0; page_size
-  default 20, máx. 100), filtro parcial case-insensitive por nome. 200 com
-  `{items, page, pageSize, totalCount, totalPages}`; 400 se `name`/`page`/`pageSize` for
+`ProjectResponse`: `{ id, name, gitUrl, gitRawUrl, createdAt, updatedAt }`.
+
+- `GET /api/indexer/projects?name=&page=&page_size=` — paginado (page zero-based, default 0;
+  `page_size` default 20, máx. 100), filtro parcial case-insensitive por nome. Os parâmetros de
+  query mantêm os nomes `page`/`page_size`; o corpo da resposta é
+  `{items, page, pageSize, totalCount, totalPages}`. 400 se `name`/`page`/`page_size` for
   inválido.
-- `GET /api/projects/{projectId}` — 200 com o projeto; 400 se `projectId` não for inteiro
-  positivo; 404 sem corpo se não existir.
-- `POST /api/projects` — cria um projeto diretamente (`name` obrigatório; `gitUrl`/`gitRawUrl`
-  opcionais). Atualização 2026-09-27: `embeddingModel`/`embeddingDimensions` foram removidos do
-  projeto (colunas dropadas em `projects` pela migration `20260927000000`); o modelo de embedding
-  é configuração do deploy (`Embeddings:*`) e continua registrado por documento em
-  `ciir_documents`. Ao contrário de
-  `EnsureProjectAsync` (usado pelo fluxo de indexação), um nome duplicado aqui é 409, não um
-  upsert silencioso. 201 com `Location` para `GET /api/projects/{id}`.
-- `PUT /api/projects/{projectId}` — substitui todos os campos (replace completo). 200 com o
-  registro atualizado; 404 se o id não existe; 409 se o novo nome já pertence a outro projeto.
-- `DELETE /api/projects/{projectId}` — remove o projeto. 204 sem corpo; 404 se o id não existe.
-  Não remove `ciir_documents`/`ciir_relations` associados - eles ficam apontando para um
-  `project_id` inexistente se o projeto tinha documentos indexados.
+- `GET /api/indexer/projects/{projectId}` — 200 com o projeto; 400 se `projectId` não for um
+  UUID; 404 sem corpo se não existir.
+- `POST /api/indexer/projects` — cria um projeto (`name` obrigatório; `gitUrl`/`gitRawUrl`
+  opcionais, valores em branco gravados como `null`). Um nome duplicado é 409. 201 com
+  `Location` para `GET /api/indexer/projects/{id}`. Não há modelo/dimensão de embedding por
+  projeto: o modelo é configuração do deploy (`Embeddings:*`) e fica registrado por documento
+  em `ciir_documents` (colunas de `projects` removidas pela migration `20260927000000`).
+- `PUT /api/indexer/projects/{projectId}` — substitui todos os campos (replace completo). 200
+  com o registro atualizado; 404 se o id não existe; 409 se o novo nome já pertence a outro
+  projeto.
+- `DELETE /api/indexer/projects/{projectId}` — 204 sem corpo; 404 se o id não existe.
+  `ciir_documents`, `ciir_relations`, `indexing_runs`, `ciir_uploads` e `code_query_feedback`
+  têm FK para `projects.id` sem `ON DELETE CASCADE`: um projeto com qualquer um desses
+  dependentes não pode ser excluído. Hoje a violação de FK não é tratada e a resposta é `500`
+  sem corpo (não um `409`).
 
 ## Implementação
 
-- `IProjectStore` (`Ciir.Indexer.Application.Ports`) ganhou `SearchAsync`, `ExistsByNameAsync`,
-  `InsertAsync`, `UpdateAsync`, `DeleteAsync`, ao lado do já existente
-  `EnsureProjectAsync`/`GetByIdAsync` usado pelo fluxo de indexação. Uma única implementação
-  (`ProjectStore`, Infrastructure.PostgreSql) cobre os dois conjuntos de operações sobre a mesma
-  tabela `projects`.
+- `IProjectStore` (`Ciir.Indexer.Application.Ports`) tem `SearchAsync`, `ExistsByNameAsync`,
+  `InsertAsync`, `UpdateAsync`, `DeleteAsync` e `GetByPublicIdAsync`, ao lado de `GetByIdAsync`
+  (id interno, usado pelo worker de upload). Uma única implementação (`ProjectStore`,
+  Infrastructure.PostgreSql) cobre todas as operações sobre a tabela `projects`.
 - Validação/orquestração em `Ciir.Indexer.Application.UseCases`: `ListProjects`, `CreateProject`,
   `UpdateProject`, `DeleteProject` (uma classe por caso de uso, seguindo o padrão já usado por
-  `StartIndexation`/`SubmitCiirUpload`/etc.), mais `ProjectFailures`/`ProjectValidation`
+  `SubmitCiirUpload`/`RegisterCiirUpload`/etc.), mais `ProjectFailures`/`ProjectValidation`
   compartilhados. Um `GET` por id não precisa de validação além do parse do id, então
-  `ProjectsController.GetAsync` chama `IProjectStore.GetByIdAsync` diretamente, sem uma classe de
+  `ProjectsController.GetAsync` chama `IProjectStore.GetByPublicIdAsync` diretamente, sem uma classe de
   caso de uso dedicada - mesmo padrão já usado por `IndexationsController.GetAsync` e
   `CiirUploadsController.GetAsync`.
-- `ProjectsController` (`api/projects`) segue o mesmo padrão de
+- `ProjectsController` (`api/indexer/projects`) segue o mesmo padrão de
   `IndexationsController`/`CiirUploadsController`: `[ApiController]`, `Result<T>.Map` para
   mapear falhas de domínio em Problem Details via `FailureResults.ToActionResult`.
-- `Ciir.Indexer.Core.Project` ganhou `CreatedAt`/`UpdatedAt` (colunas já existentes na tabela
-  desde a migration `AddProjectIdentityFields`, mas não expostas no domínio até agora).
+- `Ciir.Indexer.Core.Project` expõe `CreatedAt`/`UpdatedAt`.
 
 ## Achado replicado de `code-ciir-api`
 
@@ -73,8 +73,7 @@ comportamento em seus comentários XML sem tê-lo de fato garantido.
 ## Verificação de saída
 
 - Testes de integração (Testcontainers) cobrindo `SearchAsync`, `ExistsByNameAsync`,
-  `InsertAsync`, `UpdateAsync`, `DeleteAsync` além dos já existentes `EnsureProjectAsync`/
-  `GetByIdAsync` — `ProjectStoreTests`.
+  `InsertAsync`, `UpdateAsync`, `DeleteAsync` e `GetByIdAsync` — `ProjectStoreTests`.
 - Testes de unidade cobrindo validação de campos, conflito de nome e paginação —
   `ListProjectsTests`, `CreateProjectTests`, `UpdateProjectTests`, `DeleteProjectTests`.
 - Testes de controller (`IProjectStore` substituído via NSubstitute) cobrindo os cinco verbos —

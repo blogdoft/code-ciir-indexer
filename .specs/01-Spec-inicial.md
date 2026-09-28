@@ -47,36 +47,37 @@ RAG
 
 A aplicação será uma REST API.
 
-O endpoint principal deverá receber o caminho de um arquivo CIIR JSONL acessível pelo servidor,
-junto com a identidade do projeto ao qual essa importação pertence (ver "Atualização — Identidade
-de projeto informada pelo chamador").
-
-Exemplo conceitual:
+O arquivo CIIR JSONL chega sempre pelo object storage (Garage), associado a um projeto já
+cadastrado (ver "Atualização — Identidade de projeto informada pelo chamador",
+`02-upload-ciir-garage.md` e `04-uploads-only.md`):
 
 ```http
-POST /api/indexations
+POST /api/indexer/ciir-uploads
+Content-Type: multipart/form-data
+
+projectId = 0199a1b2-...   (public_id do projeto, UUID)
+ciirFile  = ciir.jsonl
+```
+
+ou, para arquivos grandes já enviados ao bucket:
+
+```http
+POST /api/indexer/ciir-uploads/register
 Content-Type: application/json
-```
 
-```json
-{
-  "projectName": "MyRepo.Api",
-  "path": "/data/ciir/ciir.jsonl",
-  "gitUrl": "https://github.com/org/myrepo",
-  "gitRawUrl": "https://raw.githubusercontent.com/org/myrepo"
-}
+{ "projectId": "0199a1b2-...", "objectKey": "..." }
 ```
-
-`projectName` é obrigatório; `gitUrl`/`gitRawUrl` são opcionais.
 
 Resposta:
 
 ```json
 {
-  "indexationId": "019...",
-  "status": "accepted"
+  "uploadId": "019...",
+  "status": "pending"
 }
 ```
+
+O projeto é cadastrado antes, via `POST /api/indexer/projects` (`03-projects-crud.md`).
 
 O processamento deverá ocorrer através de um caso de uso desacoplado da camada HTTP.
 
@@ -105,7 +106,7 @@ Infrastructure
    │
    ├── PostgreSQL
    ├── pgvector
-   ├── filesystem
+   ├── object storage (Garage/S3)
    └── embedding provider
 ```
 
@@ -364,32 +365,24 @@ Ele NÃO deverá impedir reprocessamento de metadados ou relações.
 
 ---
 
-# 9. Modelo de embedding por projeto
+# 9. Modelo de embedding da implantação
 
-A tabela de projetos deverá registrar qual modelo de embedding foi utilizado.
+O modelo de embedding é configuração da implantação do indexador (`Embeddings:*`), não um
+atributo do projeto.
 
-Conceitualmente:
+Cada documento registra qual modelo produziu o seu vetor:
 
 ```text
-projects
+ciir_documents
 ----------------------------
-id
-name
-git_url
-git_raw_url
 embedding_model
 embedding_dimensions
-created_at
-updated_at
+embedding_fingerprint_hash
 ```
-
-`git_url`/`git_raw_url` são opcionais e vêm do request de `POST /api/indexations` (ver "Atualização
-— Identidade de projeto informada pelo chamador").
 
 Exemplo:
 
 ```text
-Payments.Application
 bge-m3
 1024
 ```
@@ -446,18 +439,15 @@ Estrutura conceitual:
 ```sql
 projects
 (
-    id                    bigint PK,
-    name                  text NOT NULL,
+    id                    bigint PK,           -- chave interna, alvo das FKs, nunca exposta
+    public_id             uuid NOT NULL UNIQUE, -- UUIDv7, identificador exposto pela API
+    name                  text NOT NULL UNIQUE,
     git_url               text,
     git_raw_url           text,
-    embedding_model       text NOT NULL,
-    embedding_dimensions  integer NOT NULL,
     created_at            timestamptz NOT NULL,
     updated_at            timestamptz NOT NULL
 )
 ```
-
-Criar restrição adequada para identidade do projeto.
 
 Na v1:
 
@@ -465,12 +455,11 @@ Na v1:
 project.name
 ```
 
-poderá ser considerado a identidade lógica do projeto — informada pelo chamador de
-`POST /api/indexations`, nunca derivada de um registro CIIR individual (ver "Atualização —
-Identidade de projeto informada pelo chamador").
+é a identidade lógica do projeto, única — informada por quem cadastra o projeto
+(`POST /api/indexer/projects`), nunca derivada de um registro CIIR individual (ver
+"Atualização — Identidade de projeto informada pelo chamador").
 
-`git_url`/`git_raw_url` são a primeira extensão prevista abaixo (`repository`/`project_path`), já
-implementada como campos opcionais.
+`git_url`/`git_raw_url` são opcionais; valores em branco são gravados como `null`.
 
 A arquitetura deverá permitir introduzir futuramente:
 
@@ -1083,8 +1072,10 @@ indexing_runs
 Estrutura conceitual:
 
 ```text
-id
-path
+id            (interno)
+public_id     (UUIDv7, exposto como indexationId)
+path          (arquivo local de staging lido pela execução)
+project_id
 status
 started_at
 finished_at
@@ -1449,7 +1440,10 @@ src/
   Ciir.Indexer.Core/
   Ciir.Indexer.Application/
   Ciir.Indexer.Infrastructure.PostgreSql/
-  Ciir.Indexer.Infrastructure.Embeddings/
+  Ciir.Indexer.Infrastructure.Embeddings.Abstractions/
+  Ciir.Indexer.Infrastructure.Embeddings.Ollama/
+  Ciir.Indexer.Infrastructure.Embeddings.OpenAI/
+  Ciir.Indexer.Infrastructure.ObjectStorage.S3/
   Ciir.Indexer.Api/
 
 tests/
@@ -1457,6 +1451,8 @@ tests/
   Ciir.Indexer.Core.Tests/
   Ciir.Indexer.Application.Tests/
   Ciir.Indexer.Infrastructure.PostgreSql.Tests/
+  Ciir.Indexer.Infrastructure.Embeddings.Tests/
+  Ciir.Indexer.Infrastructure.ObjectStorage.S3.Tests/
   Ciir.Indexer.Api.Tests/
 ```
 
@@ -1475,7 +1471,8 @@ IndexingRun
 IndexingStatus
 CiirIdentity
 EmbeddingTextHash
-EmbeddingModel
+CiirUpload
+Project
 ```
 
 Não depender de:
@@ -1497,11 +1494,11 @@ Implementar os casos de uso.
 Exemplo:
 
 ```text
-StartIndexation
+ProcessNextCiirUpload
+RunIndexation
 ImportDocuments
 ImportRelations
 ResolveRelations
-FinalizeIndexation
 ```
 
 Responsável por orchestration.
@@ -1561,7 +1558,7 @@ resolver relações
 Disponibilizar:
 
 ```http
-GET /api/indexations/{id}
+GET /api/indexer/indexations/{id}
 ```
 
 Exemplo:
@@ -1607,46 +1604,20 @@ Depois:
 
 ---
 
-# 42. Validação do path
+# 42. Origem do arquivo
 
-Como a API recebe um path existente no servidor, tratar o valor como input não confiável.
+A API não recebe caminhos do sistema de arquivos do servidor. O arquivo só entra pelo object
+storage, em um bucket configurado (`ObjectStorage:BucketName`), e o request nunca escolhe o
+bucket (ver `02-upload-ciir-garage.md` e `04-uploads-only.md`).
 
-Implementar:
-
-```text
-normalização do path
-verificação de existência
-verificação de arquivo
-extensão esperada
-proteção contra acesso fora das raízes permitidas
-```
-
-Configuração sugerida:
+Validar:
 
 ```text
-AllowedInputRoots
+extensão esperada (.jsonl)
+tamanho máximo (Uploads:MaxCiirFileSizeBytes)
+existência do objeto (fluxo register)
+projeto existente
 ```
-
-Exemplo:
-
-```json
-{
-  "Indexer": {
-    "AllowedInputRoots": [
-      "/data/ciir"
-    ]
-  }
-}
-```
-
-Não permitir que um request arbitrário leia:
-
-```text
-/etc/passwd
-/secrets/*
-```
-
-ou qualquer arquivo disponível ao processo.
 
 ---
 
@@ -1965,9 +1936,9 @@ needsEmbedding =
 
 ---
 
-# 55. Alteração do modelo do projeto
+# 55. Alteração do modelo da implantação
 
-Quando um projeto previamente indexado mudar de modelo:
+Quando a configuração de embedding da implantação mudar de modelo:
 
 ```text
 bge-m3
@@ -1975,7 +1946,8 @@ bge-m3
 novo-modelo
 ```
 
-todos os documentos que possuem embedding deverão ser reprocessados, mesmo que:
+todos os documentos que possuem embedding deverão ser reprocessados na próxima indexação,
+mesmo que:
 
 ```text
 embeddingTextHash
@@ -2222,8 +2194,6 @@ Qdrant
 ElasticSearch
 OpenSearch
 query embedding endpoint
-Kubernetes
-queue
 repository cloning
 Git integration
 CIIR generation
@@ -2326,9 +2296,9 @@ Todos os testes passarem e a solution compilar sem warnings relevantes.
                          │      projects       │
                          │─────────────────────│
                          │ id                  │
+                         │ public_id           │
                          │ name                │
-                         │ embedding_model     │
-                         │ dimensions          │
+                         │ git_url / git_raw_url│
                          └─────────┬───────────┘
                                    │
                     ┌──────────────┴──────────────┐
@@ -2364,10 +2334,16 @@ Esses três elementos deverão permanecer conceitualmente separados.
 # 66. Fluxo arquitetural final
 
 ```text
-POST /api/indexations
+POST /api/indexer/ciir-uploads[/register]
           │
           ▼
-    StartIndexation
+    ciir_uploads (pending)
+          │
+          ▼
+  ProcessNextCiirUpload (worker)
+          │
+          ▼
+    RunIndexation
           │
           ▼
    indexing_runs
@@ -3172,31 +3148,34 @@ como preferência de tooling.
 
 # Atualização — Identidade de projeto informada pelo chamador
 
-## O bug
+## O problema
 
-Cada linha do JSONL CIIR carrega seu próprio campo `project`. Até esta atualização,
-`ImportDocuments` e `ImportRelations` resolviam esse campo POR REGISTRO, chamando
-`EnsureProjectAsync(record.project, ...)` — cujo upsert usa `ON CONFLICT (name)`. Consequência:
-dois repositórios git completamente diferentes que, por coincidência, possuem um componente
-interno com o mesmo nome (ex.: um projeto chamado "Api" em cada um) acabavam mesclados na mesma
-linha de `projects` — misturando o contexto de projeto entre repositórios não relacionados.
+Cada linha do JSONL CIIR carrega seu próprio campo `project`. Resolver o projeto POR REGISTRO,
+com um upsert por nome (`ON CONFLICT (name)`), fazia dois repositórios git completamente
+diferentes que, por coincidência, possuem um componente interno com o mesmo nome (ex.: um projeto
+chamado "Api" em cada um) acabarem mesclados na mesma linha de `projects` — misturando o contexto
+de projeto entre repositórios não relacionados.
 
-## A correção
+## A regra
 
-`POST /api/indexations` passa a exigir `projectName` (não vazio) e aceitar opcionalmente
-`gitUrl`/`gitRawUrl` (ver §2/§11). Um único projeto é resolvido UMA ÚNICA VEZ por execução — antes
-mesmo de criar a linha de `indexing_runs` — e TODAS as linhas do JSONL daquela execução, tanto
-documentos quanto relações, são vinculadas a esse projeto.
+O projeto é escolhido pelo chamador, não pelo arquivo:
+
+1. o projeto é cadastrado previamente via `POST /api/indexer/projects` (`name` obrigatório e
+   único; `gitUrl`/`gitRawUrl` opcionais — ver `03-projects-crud.md`);
+2. o upload (`POST /api/indexer/ciir-uploads[/register]`) informa o `projectId` (`public_id`
+   do projeto); um projeto inexistente é rejeitado antes de qualquer byte ser armazenado;
+3. o worker resolve o projeto UMA ÚNICA VEZ por execução, antes de criar a linha de
+   `indexing_runs`, e TODAS as linhas do JSONL daquela execução, tanto documentos quanto
+   relações, são vinculadas a esse projeto.
 
 ```text
-POST /api/indexations
-  { projectName, path, gitUrl?, gitRawUrl? }
+POST /api/indexer/ciir-uploads  { projectId, ciirFile }
         │
         ▼
-EnsureProjectAsync(projectName, gitUrl, gitRawUrl, embeddingModel)
+ciir_uploads (project_id)
         │
         ▼
-   project.Id
+ProcessNextCiirUpload → IProjectStore.GetByIdAsync(project_id)
         │
         ▼
 criar indexing_run com project_id
@@ -3207,8 +3186,8 @@ para toda linha do arquivo, ignorando o campo "project" de cada registro
 ```
 
 O campo `project` de cada registro CIIR continua sendo parseado e validado como presente (o
-contrato CIIR em si não muda, §3) — ele só deixa de ser consultado para fins de identidade de
-projeto no banco.
+contrato CIIR em si não muda, §3) — ele só não é consultado para fins de identidade de projeto no
+banco.
 
 ## Efeito colateral sobre `resolution_origin: "solution"`
 
@@ -3220,25 +3199,24 @@ existe porque, no modelo antigo, um único arquivo JSONL podia gerar múltiplas 
 outro `project_id`.
 
 Com o modelo atual, uma única execução sempre resolve para um único `project_id` — os componentes
-CIIR internos que antes viravam projetos separados agora convivem sob o mesmo projeto. Relações
-`origin: "solution"` entre eles já compartilham o mesmo `project_id` e são resolvidas pelo passo
-comum de resolução por símbolo (mesmo projeto), sem depender da busca entre projetos. Essa busca
-entre projetos não foi removida — continua correta para o caso, agora mais raro, de alguém importar
-deliberadamente dois `projectName` distintos com relações entre si — mas seu peso prático cai
-bastante.
+CIIR internos convivem sob o mesmo projeto. Relações `origin: "solution"` entre eles já
+compartilham o mesmo `project_id` e são resolvidas pelo passo comum de resolução por símbolo
+(mesmo projeto), sem depender da busca entre projetos. Essa busca entre projetos não foi removida
+— continua correta para o caso, mais raro, de alguém indexar deliberadamente dois projetos
+distintos com relações entre si — mas seu peso prático cai bastante.
 
 ## Testes obrigatórios
 
 ```text
-projectName ausente ou vazio
-    → 400, nenhum indexing_run criado
+upload sem projectId ou com projectId inválido
+    → 400, nada armazenado
+
+upload com projectId de projeto inexistente
+    → 404, nada armazenado
 
 registros com campo "project" diferente no mesmo arquivo
-    → todos vinculados ao ÚNICO projectId informado no request
+    → todos vinculados ao ÚNICO projeto do upload
 
-reenvio do mesmo projectName com gitUrl diferente
-    → projects.git_url é atualizado (upsert)
-
-dois requests com projectName diferentes, mesmo arquivo
-    → dois projetos distintos, sem mistura de contexto
+dois uploads do mesmo arquivo para projetos diferentes
+    → dois conjuntos de documentos distintos, sem mistura de contexto
 ```

@@ -29,7 +29,9 @@ Seção `Keycloak` (`appsettings.json` / variáveis `Keycloak__*`):
 | `Authority` | string | *(vazio)* | URL do realm, ex.: `https://keycloak.home.arpa/realms/blogdoft`. Obrigatória quando `Enabled = true`. |
 | `Audience` | string | *(vazio)* | Se preenchido, o claim `aud` do token precisa conter este valor. Se vazio, a audiência **não** é validada (por padrão o Keycloak emite `aud: account`, a menos que um *audience mapper* esteja configurado no client). |
 | `ClientId` | string | *(vazio)* | `client_id` do client do realm que representa esta aplicação. É o **mesmo** client usado pelo botão **Authorize** do Swagger UI para redirecionar o usuário ao login do Keycloak (ver "Atualização - Login via Keycloak no Swagger UI"): a API e o Swagger compartilham um único `clientId`. Se vazio, o Swagger UI só aceita um token colado. |
-| `RequireHttpsMetadata` | bool | `true` | Exige HTTPS para buscar o *discovery document*/JWKS. Só deve ser `false` contra um Keycloak local em HTTP. |
+| `MetadataAddress` | string | *(vazio)* | Endereço alternativo de onde buscar o *discovery document*/JWKS (ex.: o `Service` do Keycloak dentro do cluster, em HTTP). `Authority` continua sendo usada para validar o issuer, derivar o token endpoint do gateway (spec 06) e para o login do Swagger UI. Se vazio, os metadados vêm da própria `Authority`. |
+| `RequireHttpsMetadata` | bool | `true` | Exige HTTPS para buscar o *discovery document*/JWKS. `false` contra um Keycloak em HTTP (local, ou via `MetadataAddress` interno). |
+| `SkipCertificateValidation` | bool | `false` | Ignora erros de certificado TLS nas chamadas ao Keycloak (backchannel do `JwtBearer` e gateway de token). O JWKS anunciado pelo Keycloak continua no host público HTTPS mesmo com `MetadataAddress`, então uma CA privada não confiável pelo container quebra a validação. Paliativo até a CA ser confiada na imagem. |
 
 ### Regra de habilitação
 
@@ -117,10 +119,10 @@ Autenticação é uma preocupação da borda HTTP (adaptador de entrada), portan
   de teste de mesmo nome + `.Tests` (por convenção, ex.: `Ciir.Indexer.Api` →
   `Ciir.Indexer.Api.Tests`), via `InternalsVisibleTo`, em vez de um item por `.csproj`. Aqui isso dá
   acesso ao transformer do OpenAPI, que é `internal`.
-- `.eng/k8s/configmap.yaml`: bloco **comentado** com `Keycloak__Authority`/`Keycloak__Audience` -
-  a URL real do realm é decisão de quem faz o deploy, e deixar o exemplo ativo trancaria o
-  cluster para uma URL inventada. Nenhum Secret novo: token de entrada só precisa de chave
-  pública (JWKS).
+- `.eng/k8s/configmap.yaml`: autenticação ligada no cluster (`Keycloak__Enabled=true`, realm
+  `k8s`, audiência `code-brain`, `MetadataAddress` interno em HTTP,
+  `RequireHttpsMetadata=false`, `SkipCertificateValidation=true`, `ClientId=code-brain`).
+  Nenhum Secret novo: token de entrada só precisa de chave pública (JWKS).
 - `README.md`: seção "Authentication" com a tabela de configuração, as exceções anônimas e um
   exemplo de `curl` com Bearer token.
 
@@ -165,8 +167,7 @@ descoberta de chaves do `JwtBearer`:
 - Sem `Keycloak__Authority`: todas as rotas → 200, um `Authorization: Bearer junk` é ignorado, o
   documento OpenAPI não tem `securitySchemes`.
 - Com `Authority`: `/health`, documento OpenAPI e Swagger UI → 200 sem token; sem token, token
-  lixo, assinatura errada, expirado e issuer errado → 401 (`WWW-Authenticate: Bearer`,
-  `application/problem+json`), inclusive em `POST /projects`, `POST /ciir-uploads` e numa rota
+  lixo, assinatura errada, expirado e issuer errado → 401 (`WWW-Authenticate: Bearer`), inclusive em `POST /projects`, `POST /ciir-uploads` e numa rota
   inexistente; token válido → 200 (e 404 numa rota inexistente); documento OpenAPI com o scheme
   `Bearer` e `security` global.
 - Com `Audience`: token com a audiência → 200; com `aud: account` ou sem `aud` → 401.

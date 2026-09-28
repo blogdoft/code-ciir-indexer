@@ -3,7 +3,7 @@
 Reads CIIR JSONL, generates embeddings, and upserts documents/relations into PostgreSQL +
 pgvector. See `CLAUDE.md` for architecture and tooling conventions, and `.specs/` for the
 detailed functional specs (`01-Spec-inicial.md` for the core indexer, `02-upload-ciir-garage.md`
-for the Garage upload endpoint,
+for the Garage upload endpoint, `03-projects-crud.md` for project CRUD,
 `04-uploads-only.md` for why the old local-path endpoint is gone,
 `05-keycloak-auth.md` for the optional Keycloak authentication, `06-token-gateway.md` for the
 token endpoint non-interactive clients use to get a token).
@@ -13,16 +13,16 @@ token endpoint non-interactive clients use to get a token).
 There is no local-filesystem-path entry point - every CIIR file reaches indexation through the object storage (Garage),
 one of two ways:
 
-- **`POST /api/ciir-uploads`** (multipart, `projectId` + `ciirFile` fields): the default path for
+- **`POST /api/indexer/ciir-uploads`** (multipart, `projectId` + `ciirFile` fields): the default path for
   most files, up to `Uploads:MaxCiirFileSizeBytes` (200 MB by default). This service streams the
   file into its `ciir-uploads` bucket for you.
-- **`POST /api/ciir-uploads/register`** (JSON, `{"projectId": "...", "objectKey": "..."}"`): for a
+- **`POST /api/indexer/ciir-uploads/register`** (JSON, `{"projectId": "...", "objectKey": "..."}"`): for a
   file too large for a single HTTP request. Upload it directly to the same bucket yourself first
   (e.g. `aws --endpoint-url <garage s3 url> --region garage s3 cp big-ciir.jsonl s3://ciir-uploads/<objectKey>`
   using the `ciir-indexer-uploader` credentials below, or a presigned URL), then call this endpoint with the
   key you uploaded it under. The object's existence is checked before it's registered.
 
-Either way, poll `GET /api/ciir-uploads/{uploadId}` for status, then `GET /api/indexations/{indexationId}`
+Either way, poll `GET /api/indexer/ciir-uploads/{uploadId}` for status, then `GET /api/indexer/indexations/{indexationId}`
 once that reports an `indexationId`.
 
 ## Authentication (Keycloak)
@@ -41,13 +41,15 @@ JWT bearer authentication: every route then requires an access token issued by t
 | `Authority` | *(empty)* | The realm's URL, e.g. `https://keycloak.example/realms/my-realm`. Required when `Enabled` is `true`. |
 | `Audience` | *(empty)* | If set, the token's `aud` claim must contain it. If empty, the audience isn't checked (Keycloak access tokens carry `aud: account` unless the client has an audience mapper). |
 | `ClientId` | *(empty)* | `client_id` of the realm client this application is registered as - a public client, and the same one Swagger UI logs in with (there is a single client id for the API and Swagger). When set (with `Enabled`), Swagger UI's **Authorize** redirects to the Keycloak login (see below). |
-| `RequireHttpsMetadata` | `true` | Set `false` only for a local, plain-HTTP Keycloak. |
+| `MetadataAddress` | *(empty)* | Alternative URL to fetch the discovery document/JWKS from (e.g. the in-cluster Keycloak Service over HTTP). `Authority` is still used for issuer validation, the token gateway and Swagger login. |
+| `RequireHttpsMetadata` | `true` | Set `false` only for a plain-HTTP Keycloak (local, or an in-cluster `MetadataAddress`). |
+| `SkipCertificateValidation` | `false` | Ignore TLS certificate errors when calling Keycloak. A stopgap for a private CA the container doesn't trust yet. |
 
 With `Enabled=true`, a missing, invalid or plain-HTTP `Authority` (while `RequireHttpsMetadata` is
 `true`) fails startup instead of serving traffic unprotected.
 
-Missing, expired or otherwise invalid tokens get `401` with a `WWW-Authenticate: Bearer` header and a
-Problem Details body. Any valid token from the realm is accepted - there is no per-role authorization.
+Missing, expired or otherwise invalid tokens get `401` with a `WWW-Authenticate: Bearer` header and no
+body (the reason is only logged). Any valid token from the realm is accepted - there is no per-role authorization.
 
 Deliberately left anonymous, even with Keycloak on: `GET /health` (the Kubernetes readiness probe has
 no token), the OpenAPI document/Swagger UI (a browser can't attach a token to page navigation) and
@@ -113,7 +115,7 @@ curl -H "Authorization: Bearer $TOKEN" https://blogdoft.home.arpa/code-brain/api
 
 ## Garage — upload key
 
-`POST /api/ciir-uploads` stores incoming CIIR files in a Garage bucket (`ciir-uploads`) until the
+`POST /api/indexer/ciir-uploads` stores incoming CIIR files in a Garage bucket (`ciir-uploads`) until the
 background worker picks them up. Garage is S3-compatible, so the adapter
 (`Ciir.Indexer.Infrastructure.ObjectStorage.S3`) is the plain AWS S3 SDK pointed at Garage with
 path-style addressing and the Garage region (`garage`, the server's `s3_region`). The application

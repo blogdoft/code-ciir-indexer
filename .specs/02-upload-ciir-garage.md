@@ -2,8 +2,9 @@
 
 ## 1. Objetivo
 
-Adicionar um segundo ponto de entrada de indexação ao `code-ciir-indexer`, complementar ao já
-existente `POST /api/indexations` (path local).
+Definir o ponto de entrada de indexação do `code-ciir-indexer` por upload de arquivo. Ele
+começou como complemento ao antigo `POST /api/indexations` (path local) e hoje é o único
+ponto de entrada — o fluxo por path foi removido (`04-uploads-only.md`).
 
 O novo endpoint recebe o arquivo `ciir.jsonl` diretamente via HTTP, sabendo que ele pode chegar a
 200 MB. Diferente do fluxo por path, aqui a aplicação não pode confiar que o processamento cabe
@@ -55,8 +56,8 @@ ingestão e processamento precisam ser desacoplados
 por um mecanismo durável, não por um canal em memória
 ```
 
-O `IndexationChannel` (`Channel<Guid>` em memória) que já existe para o fluxo por path não
-serve aqui: ele é perdido se o processo reiniciar no meio de um processamento. Por isso este
+O `IndexationChannel` (`Channel<Guid>` em memória) que o fluxo por path usava não serviria
+aqui: ele é perdido se o processo reiniciar no meio de um processamento. Por isso este
 documento introduz uma fila **durável**, baseada em tabela PostgreSQL com `SELECT ... FOR UPDATE
 SKIP LOCKED`, e não em uma abstração de fila genérica nem em infraestrutura de mensageria externa
 (RabbitMQ, Kafka etc. continuam fora de escopo).
@@ -74,27 +75,25 @@ NÃO enviado nesta versão:
   código-fonte do projeto
 
 NÃO feito por este endpoint:
-  criação ou atualização de projeto (diferente do fluxo por path, que faz
-  create-or-update por nome via IProjectStore.EnsureProjectAsync)
+  criação ou atualização de projeto
 ```
 
-O projeto referenciado por `projectId` precisa já existir (cadastrado previamente — hoje isso só
-acontece como efeito colateral do fluxo por path `POST /api/indexations`, já que não existe um
-endpoint dedicado de cadastro de projeto). Se não existir, o upload é rejeitado.
+O projeto referenciado por `projectId` precisa já existir, cadastrado previamente via
+`POST /api/indexer/projects` (`03-projects-crud.md`). Se não existir, o upload é rejeitado.
 
 ---
 
 ## 4. Contrato do endpoint de upload
 
 ```http
-POST /api/ciir-uploads
+POST /api/indexer/ciir-uploads
 Content-Type: multipart/form-data; boundary=...
 ```
 
 Partes do multipart:
 
 ```text
-projectId   (texto/número, obrigatório — id de um projeto já cadastrado)
+projectId   (texto, obrigatório — public_id (UUID) de um projeto já cadastrado)
 ciirFile    (arquivo, obrigatório, extensão .jsonl, até o limite configurado)
 ```
 
@@ -111,7 +110,7 @@ Erros (mesma convenção de `Failure.Code` = `"{status}-{slug}"` já usada por
 `IndexationsController`):
 
 ```text
-400-project-id-required       projectId ausente, em branco ou não numérico
+400-project-id-required       projectId ausente, em branco ou não é um UUID
 404-project-not-found         projectId não corresponde a nenhum projeto cadastrado
 400-ciir-file-required        parte ciirFile ausente
 400-invalid-extension         ciirFile sem extensão .jsonl
@@ -133,13 +132,13 @@ aqui. Isso é responsabilidade do `RunIndexation` já existente, reaproveitado p
 ### 4.1. Endpoint de consulta de status
 
 ```http
-GET /api/ciir-uploads/{id}
+GET /api/indexer/ciir-uploads/{id}
 ```
 
 ```json
 {
   "id": "019...",
-  "projectId": 42,
+  "projectId": "0199a1b2-...",
   "status": "processed",
   "createdAt": "2026-09-16T12:00:00Z",
   "processingStartedAt": "2026-09-16T12:01:00Z",
@@ -149,7 +148,7 @@ GET /api/ciir-uploads/{id}
 }
 ```
 
-`404` (sem corpo) se o id não existir — mesmo padrão de `GET /api/indexations/{id}`.
+`404` (sem corpo) se o id não existir — mesmo padrão de `GET /api/indexer/indexations/{id}`.
 
 `indexationId` só aparece depois que o Worker cria o `indexing_run` correspondente (pode ser
 `null` enquanto o upload ainda está `pending`).
@@ -197,7 +196,8 @@ Estrutura conceitual:
 
 ```sql
 CREATE TABLE ciir_uploads (
-    id                     uuid PRIMARY KEY,
+    id                     bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,  -- interno
+    public_id              uuid NOT NULL UNIQUE,  -- UUIDv7, exposto como uploadId/id
     project_id             bigint NOT NULL REFERENCES projects (id),
     bucket                 text NOT NULL,
     object_key             text NOT NULL,
@@ -207,7 +207,7 @@ CREATE TABLE ciir_uploads (
     processed_at           timestamptz NULL,
     retry_count            integer NOT NULL DEFAULT 0,
     error                  text NULL,
-    indexing_run_id        uuid NULL REFERENCES indexing_runs (id)
+    indexing_run_id        uuid NULL REFERENCES indexing_runs (public_id)
 );
 
 CREATE INDEX ix_ciir_uploads_status_created_at
@@ -271,10 +271,9 @@ reter um arquivo de até 200 MB que já foi processado (com sucesso ou não) e n
 
 ## 8. Worker de processamento (`BackgroundService`)
 
-Mesma família de mecanismo já usada por `IndexationWorker` — um `BackgroundService` do
-`Microsoft.Extensions.Hosting`, registrado via `AddHostedService<CiirUploadWorker>()`. A
-diferença é a origem do trabalho: em vez de ler de um `Channel<Guid>` em memória, faz polling na
-tabela `ciir_uploads`.
+Um `BackgroundService` do `Microsoft.Extensions.Hosting`, registrado via
+`AddHostedService<CiirUploadWorker>()`, que faz polling na tabela `ciir_uploads` (em vez de ler
+de um `Channel<Guid>` em memória, como fazia o antigo `IndexationWorker`).
 
 Ciclo (repete enquanto a aplicação estiver de pé):
 
@@ -292,24 +291,19 @@ Ciclo (repete enquanto a aplicação estiver de pé):
 4. Se um registro foi reivindicado:
    a. Baixar o objeto do Garage para um diretório de staging local exclusivo deste upload
       (streaming disco-a-disco, sem carregar em memória).
-   b. Buscar o projeto por upload.ProjectId (IProjectStore.GetByIdAsync — novo método, ver §9).
+   b. Buscar o projeto por upload.ProjectId (IProjectStore.GetByIdAsync, ver §9).
       Se não existir mais, marcar o upload como "failed" (projeto removido após o upload) e
       encerrar este ciclo sem chamar RunIndexation.
-   c. Reaproveitar IProjectStore.EnsureProjectAsync(project.Name, project.GitUrl,
-      project.GitRawUrl, embeddingModelAtual, ct) — mesma chamada que o fluxo por path já faz,
-      usada aqui só para atualizar embedding_model/dimensions do projeto se o provedor
-      configurado mudou desde o cadastro (spec 01 §55). Não cria projeto novo, pois o nome já
-      existe.
-   d. Criar um indexing_run apontando para o path de staging (reaproveita
-      IIndexingRunStore.CreateAsync com project.Id).
-   e. Vincular indexing_run_id ao registro de upload.
-   f. Executar RunIndexation.ExecuteAsync — o mesmo motor já usado pelo fluxo por path, sem
-      nenhuma duplicação de lógica de embeddings/relações.
-   g. Apagar o arquivo de staging local (sempre, mesmo se a indexação falhar).
-   h. Apagar o objeto do Garage.
-   i. Marcar o upload como "processed" (se o indexing_run terminou Completed) ou "failed" (caso
+   c. Criar um indexing_run apontando para o path de staging (IIndexingRunStore.CreateAsync
+      com project.Id).
+   d. Vincular indexing_run_id ao registro de upload.
+   e. Executar RunIndexation.ExecuteAsync — o motor único de indexação, sem nenhuma
+      duplicação de lógica de embeddings/relações.
+   f. Apagar o arquivo de staging local (sempre, mesmo se a indexação falhar).
+   g. Apagar o objeto do Garage.
+   h. Marcar o upload como "processed" (se o indexing_run terminou Completed) ou "failed" (caso
       contrário), com processed_at = agora.
-   j. Voltar imediatamente ao passo 1, sem esperar — só espera quando não há nada a fazer.
+   i. Voltar imediatamente ao passo 1, sem esperar — só espera quando não há nada a fazer.
 ```
 
 A reivindicação (passo 2) precisa ser atômica mesmo que mais de uma instância do serviço rode ao
@@ -353,31 +347,31 @@ RETURNING id, bucket, object_key;
 
 `RunIndexation.ExecuteAsync` nunca lança exceção (contrato já estabelecido em
 `01-Spec-inicial.md`) — sempre deixa o `indexing_run` em um status terminal
-(`Completed`/`Failed`/`Cancelled`). O passo 4.i só precisa ler esse status final; não precisa de
+(`Completed`/`Failed`/`Cancelled`). O passo 4.h só precisa ler esse status final; não precisa de
 try/catch em torno da chamada em si, só em torno do download/staging/lookup de projeto (passos
 4.a–4.c, que podem falhar por problemas de Garage/disco/projeto removido antes mesmo de chegar ao
 `RunIndexation`).
 
 O download do Garage gera um path **local, gerado pelo próprio servidor**
-(`{StagingDirectory}/{uploadId:N}/ciir.jsonl`) — nunca derivado de entrada do cliente. Por isso
-este path **não passa** por `InputPathResolver`/`AllowedInputRoots`: aquela validação existe para
-um path que o cliente controla (o fluxo por path local); aqui o path é sempre construído pelo
-próprio Worker.
+(`{StagingDirectory}/{uploadId:N}/ciir.jsonl`) — nunca derivado de entrada do cliente, então
+não precisa de validação de path: é sempre construído pelo próprio Worker.
 
 ---
 
 ## 9. Portas e adaptadores (arquitetura hexagonal)
 
-`IProjectStore` (já existente) ganha um novo método, usado tanto pelo endpoint (validar
-`projectId` antes de subir o arquivo) quanto pelo Worker (recuperar nome/git urls para o
-`EnsureProjectAsync` do passo 8.c):
+`IProjectStore` (já existente) é usado tanto pelo endpoint (validar o `projectId` recebido,
+por `public_id`, antes de subir o arquivo) quanto pelo Worker (confirmar, pelo `id` interno
+gravado no upload, que o projeto ainda existe):
 
 ```csharp
 public interface IProjectStore
 {
-    // ... EnsureProjectAsync já existente, sem mudanças ...
+    Task<Project?> GetByPublicIdAsync(Guid publicId, CancellationToken cancellationToken = default);
 
     Task<Project?> GetByIdAsync(long id, CancellationToken cancellationToken = default);
+
+    // ... demais operações de CRUD, ver 03-projects-crud.md ...
 }
 ```
 
@@ -420,7 +414,7 @@ Novos casos de uso em `Ciir.Indexer.Application/UseCases/`:
 
 ```text
 SubmitCiirUpload        — endpoint POST: valida projectId (obrigatório, deve existir via
-                           IProjectStore.GetByIdAsync), sobe o stream pro Garage, cria o
+                           IProjectStore.GetByPublicIdAsync), sobe o stream pro Garage, cria o
                            registro "pending". Retorna Result<CiirUpload>. Nunca cria/atualiza
                            projeto.
 
@@ -467,7 +461,7 @@ CiirUpload.cs                  — record de domínio (Id, ProjectId, Bucket, Ob
 Controllers/CiirUploadsController.cs   — POST (streaming multipart) + GET status
 Contracts/SubmitCiirUploadResponse.cs
 Contracts/CiirUploadStatusResponse.cs
-Uploads/CiirUploadWorker.cs            — BackgroundService, mesmo formato de IndexationWorker.cs
+Uploads/CiirUploadWorker.cs            — BackgroundService que executa ProcessNextCiirUpload em loop
 ```
 
 `Program.cs` ganha: bind de `S3Options`/`UploadOptions` (padrão já usado —
@@ -476,8 +470,8 @@ Uploads/CiirUploadWorker.cs            — BackgroundService, mesmo formato de I
 (mesmo espírito de `app.Services.GetRequiredService<IEmbeddingGenerator>()`), registro de
 `AddHostedService<CiirUploadWorker>()`, e a policy de rate limiting do §11.
 
-O endpoint `POST /api/indexations` (path local) permanece exatamente como está — este documento
-só adiciona um segundo ponto de entrada, não substitui o existente.
+O antigo endpoint `POST /api/indexations` (path local) foi removido depois, deixando este como o
+único ponto de entrada (`04-uploads-only.md`).
 
 ---
 
@@ -509,7 +503,7 @@ só adiciona um segundo ponto de entrada, não substitui o existente.
 hardcoded — mesmo padrão já usado hoje para `ConnectionStrings__Database`.
 
 Ambas as seções são obrigatórias (`Get<T>() ?? throw new InvalidOperationException(...)`), assim
-como `EmbeddingOptions`/`IndexerPathOptions` hoje.
+como `EmbeddingOptions`.
 
 `docker-compose.yml` (`.eng/docker/docker-compose.yml`) ganha um serviço `garage` (imagem oficial
 `dxflrs/garage`, configuração em `.eng/docker/garage/`) para desenvolvimento local.
@@ -568,8 +562,7 @@ ingestão (endpoint) é barata e rápida (validar projectId + stream pro Garage 
   pode aceitar uploads mesmo enquanto o Worker está processando um backlog grande, porque
   as duas etapas estão desacopladas pela tabela
 
-Worker processa um upload por vez, serializado — mesmo modelo do IndexationWorker
-  já existente; SKIP LOCKED existe para permitir múltiplas instâncias no futuro
+Worker processa um upload por vez, serializado; SKIP LOCKED existe para permitir múltiplas instâncias no futuro
   sem duplicar trabalho, não para paralelizar dentro de uma única instância
 ```
 
@@ -581,7 +574,7 @@ Worker processa um upload por vez, serializado — mesmo modelo do IndexationWor
 POST aceita um ciir.jsonl dentro do limite, com projectId de um projeto existente,
   e retorna 202 com status "pending"
 
-POST rejeita projectId ausente/em branco/não numérico (400)
+POST rejeita projectId ausente/em branco/que não é UUID (400)
 
 POST rejeita projectId que não corresponde a nenhum projeto cadastrado (404)
 
@@ -625,7 +618,7 @@ Testes de integração devem usar PostgreSQL real (já é o padrão do repositó
 fakes/mocks na camada do adaptador, mesmo princípio já aplicado ao Postgres em
 `01-Spec-inicial.md` §60. Testes de caso de uso (`ProcessNextCiirUpload`, `SubmitCiirUpload`)
 continuam usando substitutos das portas (`NSubstitute`), como já é o padrão em
-`StartIndexationTests`/`RunIndexationTests`.
+`RunIndexationTests`.
 
 ---
 
@@ -640,8 +633,8 @@ múltiplos buckets por projeto
 retry ilimitado
 processamento paralelo de múltiplos uploads dentro da mesma instância
 antivírus/malware scanning do conteúdo enviado
-autenticação/autorização do endpoint (fora de escopo deste documento — mesmo nível
-  de exposição que o endpoint POST /api/indexations já tem hoje)
+autenticação/autorização do endpoint (fora de escopo deste documento — coberta depois
+  por 05-keycloak-auth.md)
 ```
 
 ---
@@ -650,7 +643,7 @@ autenticação/autorização do endpoint (fora de escopo deste documento — mes
 
 ### Upload
 
-Um `ciir.jsonl` de até o tamanho configurado pode ser enviado via `POST /api/ciir-uploads`,
+Um `ciir.jsonl` de até o tamanho configurado pode ser enviado via `POST /api/indexer/ciir-uploads`,
 informando o `projectId` de um projeto já cadastrado, e recebe um `uploadId` com status
 `pending`.
 
@@ -667,8 +660,8 @@ processado.
 ### Processamento
 
 O Worker reivindica o registro pendente mais antigo, executa a indexação reaproveitando
-`RunIndexation` para o `projectId` do upload, e o resultado (contadores, erro) é o mesmo que o
-fluxo por path já produziria para o mesmo conteúdo e projeto.
+`RunIndexation` para o projeto do upload, e o resultado (contadores, erro) fica em
+`indexing_runs`, consultável via `GET /api/indexer/indexations/{id}`.
 
 ### Limpeza
 
@@ -679,10 +672,6 @@ o arquivo de staging local não existe mais em disco.
 
 Um registro que fica "processing" além do timeout configurado é reivindicado de novo, até o
 limite de tentativas; depois disso fica `failed` permanentemente.
-
-### Sem impacto no fluxo existente
-
-`POST /api/indexations` (path local) continua funcionando exatamente como antes.
 
 ### Qualidade
 
