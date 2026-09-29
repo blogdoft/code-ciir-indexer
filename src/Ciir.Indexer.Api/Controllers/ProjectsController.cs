@@ -56,7 +56,6 @@ public sealed class ProjectsController : ControllerBase
     /// Returns a page of projects. Optionally filter the results by project name using a partial,
     /// case-insensitive match. When no project matches the supplied filter (or no projects exist at
     /// all), the response is a 200 OK with an empty items array - this is not treated as an error.
-    /// Results are ordered by project name (ascending).
     /// </remarks>
     /// <param name="name">Optional partial, case-insensitive project name filter. Empty or omitted means no filter. Results are ordered by name.</param>
     /// <param name="page">Zero-based page number to retrieve. Defaults to 0. Must not be negative.</param>

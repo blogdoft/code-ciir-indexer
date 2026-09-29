@@ -128,6 +128,19 @@ public sealed class ProjectStoreTests
     }
 
     [Fact]
+    public async Task SearchAsync_FilterWithAsteriskWildcard_MatchesAnyCharactersInItsPlace()
+    {
+        var prefix = TestData.NewProjectName();
+        var match = await _sut.EnsureProjectAsync($"{prefix}-alpha-service", null, null);
+        await _sut.EnsureProjectAsync($"{prefix}-alpha-worker", null, null);
+
+        var (items, totalCount) = await _sut.SearchAsync($"{prefix}*service", page: 0, pageSize: 20);
+
+        totalCount.ShouldBe(1);
+        items.Single().Id.ShouldBe(match.Id);
+    }
+
+    [Fact]
     public async Task SearchAsync_MultipleMatches_ReturnsProjectsOrderedByName()
     {
         var prefix = TestData.NewProjectName();

@@ -1,4 +1,5 @@
 using BlogDoFT.Libs.DapperUtils.Abstractions;
+using BlogDoFT.Libs.DapperUtils.Abstractions.Extensions;
 using BlogDoFT.Libs.DapperUtils.Postgres;
 using Ciir.Indexer.Application.Ports;
 using Ciir.Indexer.Core;
@@ -90,8 +91,7 @@ public sealed class ProjectStore : IProjectStore
     public async Task<(IReadOnlyList<Project> Items, long TotalCount)> SearchAsync(
         string? nameFilter, int page, int pageSize, CancellationToken cancellationToken = default)
     {
-        // A null, empty or blank name means "no filter": the predicate is simply left out.
-        nameFilter = string.IsNullOrWhiteSpace(nameFilter) ? null : nameFilter;
+        nameFilter = string.IsNullOrWhiteSpace(nameFilter) ? null : nameFilter.AsSqlWildCard(toUpperCase: false);
 
         // The interpolated fragments below are limited to a fixed, developer-controlled shape that
         // WhereBuilder/PaginatedSqlBuilder either includes verbatim or omits entirely - the
