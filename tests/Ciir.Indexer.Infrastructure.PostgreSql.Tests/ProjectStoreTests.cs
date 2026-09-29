@@ -113,6 +113,33 @@ public sealed class ProjectStoreTests
         items.ShouldAllBe(p => p.Name == name);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task SearchAsync_NullEmptyOrBlankFilter_DoesNotFilterByName(string? nameFilter)
+    {
+        await _sut.EnsureProjectAsync(TestData.NewProjectName(), null, null);
+
+        var (items, totalCount) = await _sut.SearchAsync(nameFilter, page: 0, pageSize: 100);
+
+        totalCount.ShouldBeGreaterThanOrEqualTo(1);
+        items.ShouldNotBeEmpty();
+    }
+
+    [Fact]
+    public async Task SearchAsync_MultipleMatches_ReturnsProjectsOrderedByName()
+    {
+        var prefix = TestData.NewProjectName();
+        await _sut.EnsureProjectAsync($"{prefix}-b", null, null);
+        await _sut.EnsureProjectAsync($"{prefix}-c", null, null);
+        await _sut.EnsureProjectAsync($"{prefix}-a", null, null);
+
+        var (items, _) = await _sut.SearchAsync(prefix, page: 0, pageSize: 20);
+
+        items.Select(p => p.Name).ShouldBe([$"{prefix}-a", $"{prefix}-b", $"{prefix}-c"]);
+    }
+
     [Fact]
     public async Task ExistsByNameAsync_ExistingName_ReturnsTrue()
     {

@@ -90,6 +90,9 @@ public sealed class ProjectStore : IProjectStore
     public async Task<(IReadOnlyList<Project> Items, long TotalCount)> SearchAsync(
         string? nameFilter, int page, int pageSize, CancellationToken cancellationToken = default)
     {
+        // A null, empty or blank name means "no filter": the predicate is simply left out.
+        nameFilter = string.IsNullOrWhiteSpace(nameFilter) ? null : nameFilter;
+
         // The interpolated fragments below are limited to a fixed, developer-controlled shape that
         // WhereBuilder/PaginatedSqlBuilder either includes verbatim or omits entirely - the
         // caller-supplied value still flows through the @NameFilter Dapper parameter, so this

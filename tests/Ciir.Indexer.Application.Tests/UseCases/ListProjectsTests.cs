@@ -27,17 +27,6 @@ public sealed class ListProjectsTests
         result.Value.TotalPages.ShouldBe(1);
     }
 
-    [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    public async Task ExecuteAsync_EmptyOrWhitespaceFilter_ReturnsNameFilterEmpty(string nameFilter)
-    {
-        var result = await CreateSut().ExecuteAsync(nameFilter, null, null);
-
-        result.IsFailure.ShouldBeTrue();
-        result.Failure.Code.ShouldBe("400-name-filter-empty");
-    }
-
     [Fact]
     public async Task ExecuteAsync_FilterTooLong_ReturnsNameFilterTooLong()
     {

@@ -8,10 +8,6 @@ namespace Ciir.Indexer.Application.UseCases;
 /// </summary>
 public static class ProjectFailures
 {
-    public static Failure NameFilterEmpty() => new(
-        "400-name-filter-empty",
-        "The 'name' query parameter must not be empty when provided.");
-
     public static Failure NameFilterTooLong(int maxLength) => new(
         "400-name-filter-too-long",
         $"The 'name' query parameter must not exceed {maxLength} characters.");

@@ -56,7 +56,9 @@ public sealed class ProjectsController : ControllerBase
     /// Returns a page of projects. Optionally filter the results by project name using a partial,
     /// case-insensitive match. When no project matches the supplied filter (or no projects exist at
     /// all), the response is a 200 OK with an empty items array - this is not treated as an error.
+    /// Results are ordered by project name (ascending).
     /// </remarks>
+    /// <param name="name">Optional partial, case-insensitive project name filter. Empty or omitted means no filter. Results are ordered by name.</param>
     /// <param name="page">Zero-based page number to retrieve. Defaults to 0. Must not be negative.</param>
     /// <param name="pageSize">Maximum number of projects per page. Defaults to 20, capped at 100. Must be a positive integer.</param>
     /// <param name="cancellationToken">Propagates request cancellation.</param>
@@ -68,18 +70,11 @@ public sealed class ProjectsController : ControllerBase
     [ProducesResponseType<ProjectListResponse>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     public async Task<IActionResult> ListAsync(
+        [FromQuery(Name = "name")] string? name,
         [FromQuery(Name = "page")] int? page,
         [FromQuery(Name = "page_size")] int? pageSize,
         CancellationToken cancellationToken)
     {
-        // Read the raw query value instead of a bound [FromQuery] parameter: MVC's default model
-        // binding treats an empty string as null (ConvertEmptyStringToNull), which would make
-        // "?name=" indistinguishable from omitting the parameter entirely - the latter means "no
-        // filter", the former is an invalid empty filter.
-#pragma warning disable S6932
-        var name = Request.Query.TryGetValue("name", out var values) ? values.ToString() : null;
-#pragma warning restore S6932
-
         var result = await _listProjects.ExecuteAsync(name, page, pageSize, cancellationToken);
 
         return result.Map(

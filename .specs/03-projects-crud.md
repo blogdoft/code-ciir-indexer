@@ -23,9 +23,10 @@ corpo e `{projectId}` na rota; a chave numérica interna nunca sai do serviço.
 `ProjectResponse`: `{ id, name, gitUrl, gitRawUrl, createdAt, updatedAt }`.
 
 - `GET /api/indexer/projects?name=&page=&page_size=` — paginado (page zero-based, default 0;
-  `page_size` default 20, máx. 100), filtro parcial case-insensitive por nome. Os parâmetros de
+  `page_size` default 20, máx. 100), filtro parcial case-insensitive por nome (`name`, opcional; vazio ou ausente = sem filtro). A ordenação é sempre
+  crescente pelo nome do projeto (`ORDER BY name`), antes da paginação. Os parâmetros de
   query mantêm os nomes `page`/`page_size`; o corpo da resposta é
-  `{items, page, pageSize, totalCount, totalPages}`. 400 se `name`/`page`/`page_size` for
+  `{items, page, pageSize, totalCount, totalPages}`. 400 se `name` (acima de 200 caracteres)/`page`/`page_size` for
   inválido.
 - `GET /api/indexer/projects/{projectId}` — 200 com o projeto; 400 se `projectId` não for um
   UUID; 404 sem corpo se não existir.

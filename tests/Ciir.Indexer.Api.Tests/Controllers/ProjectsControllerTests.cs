@@ -20,7 +20,7 @@ public sealed class ProjectsControllerTests
         var projects = new[] { BuildProject(1), BuildProject(2) };
         _projectStore.SearchAsync(null, 0, 20, Arg.Any<CancellationToken>()).Returns((projects, 2L));
 
-        var result = await CreateSut().ListAsync(null, null, CancellationToken.None);
+        var result = await CreateSut().ListAsync(null, null, null, CancellationToken.None);
 
         var ok = result.ShouldBeOfType<OkObjectResult>();
         var body = ok.Value.ShouldBeOfType<ProjectListResponse>();
@@ -31,7 +31,7 @@ public sealed class ProjectsControllerTests
     [Fact]
     public async Task ListAsync_InvalidPageSize_ReturnsBadRequestWithoutQueryingTheStore()
     {
-        var result = await CreateSut().ListAsync(null, 0, CancellationToken.None);
+        var result = await CreateSut().ListAsync(null, null, 0, CancellationToken.None);
 
         var objectResult = result.ShouldBeOfType<ObjectResult>();
         objectResult.StatusCode.ShouldBe(StatusCodes.Status400BadRequest);

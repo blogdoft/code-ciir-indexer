@@ -20,17 +20,9 @@ public sealed class ListProjects
         int? pageSize,
         CancellationToken cancellationToken = default)
     {
-        if (nameFilter is not null)
+        if (nameFilter?.Length > ProjectValidation.MaxNameFilterLength)
         {
-            if (string.IsNullOrWhiteSpace(nameFilter))
-            {
-                return ProjectFailures.NameFilterEmpty();
-            }
-
-            if (nameFilter.Length > ProjectValidation.MaxNameFilterLength)
-            {
-                return ProjectFailures.NameFilterTooLong(ProjectValidation.MaxNameFilterLength);
-            }
+            return ProjectFailures.NameFilterTooLong(ProjectValidation.MaxNameFilterLength);
         }
 
         var resolvedPage = page ?? 0;
