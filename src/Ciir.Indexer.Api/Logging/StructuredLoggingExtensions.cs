@@ -1,4 +1,6 @@
+using BlogDoFT.Libs.Api.Extensions;
 using Serilog;
+using Serilog.Context;
 using Serilog.Events;
 using Serilog.Templates;
 
@@ -17,6 +19,7 @@ internal static class StructuredLoggingExtensions
     // up as "unknown". "..@p" spreads the message-template properties (and scope/enricher ones) as
     // top-level fields; "@tr"/"@sp" are the current Activity's trace and span ids.
     private const string HealthPath = "/health";
+    private const string CorrelationIdHeader = "X-Correlation-ID";
 
     private const string JsonTemplate =
         "{ {timestamp: @t, " +
@@ -42,6 +45,30 @@ internal static class StructuredLoggingExtensions
             .WriteTo.Console(new ExpressionTemplate(JsonTemplate)));
 
         return builder;
+    }
+
+    /// <summary>
+    /// Resolves the request's correlation id (<c>X-Correlation-ID</c>, generated when the caller sent
+    /// none), echoes it on the response and adds it to every log line written while the request runs
+    /// as <c>correlation_id</c>. Register it ahead of <see cref="UseStructuredRequestLogging"/>, so the
+    /// request log line carries it too.
+    /// </summary>
+    /// <param name="app">The web application.</param>
+    /// <returns>The same <paramref name="app"/>, for chaining.</returns>
+    public static WebApplication UseCorrelationId(this WebApplication app)
+    {
+        app.Use(async (httpContext, next) =>
+        {
+            var correlationId = httpContext.Request.Headers.GetCorrelationId();
+            httpContext.Response.Headers[CorrelationIdHeader] = correlationId;
+
+            using (LogContext.PushProperty("correlation_id", correlationId))
+            {
+                await next(httpContext);
+            }
+        });
+
+        return app;
     }
 
     /// <summary>

@@ -126,6 +126,7 @@ try
     await app.Services.GetRequiredService<IObjectStorage>().EnsureBucketExistsAsync(objectStorageOptions.BucketName);
 
     // Ahead of everything else so every request is covered; /health is skipped.
+    app.UseCorrelationId();
     app.UseStructuredRequestLogging();
 
     // Always mapped (not gated to Development) so Swagger is reachable in this cluster too - both
