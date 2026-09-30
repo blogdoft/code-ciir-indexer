@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <PackageReference Include="BlogDoFT.Libs.ResultPattern" Version="1.14.0" />
+    <PackageReference Include="BlogDoFT.Libs.ResultPattern" Version="10.1.1" />
     <PackageReference Include="FluentValidation" Version="12.1.1" />
   </ItemGroup>
 

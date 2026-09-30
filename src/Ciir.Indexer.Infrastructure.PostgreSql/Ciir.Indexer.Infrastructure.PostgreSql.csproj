@@ -7,7 +7,7 @@
     <PackageReference Include="FluentMigrator" Version="8.0.1" />
     <PackageReference Include="FluentMigrator.Runner" Version="8.0.1" />
     <PackageReference Include="FluentMigrator.Runner.Postgres" Version="8.0.1" />
-    <PackageReference Include="BlogDoFT.Libs.DapperUtils.Postgres" Version="1.14.0" />
+    <PackageReference Include="BlogDoFT.Libs.DapperUtils.Postgres" Version="10.1.1" />
     <PackageReference Include="BlogDoFT.Libs.WarmUp" Version="10.1.1" />
   </ItemGroup>
 
