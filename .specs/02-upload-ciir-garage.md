@@ -436,11 +436,9 @@ ServiceCollectionExtensions.cs   — AddS3ObjectStorage(S3Options)
 `Ciir.Indexer.Infrastructure.PostgreSql/` ganha:
 
 ```text
-CiirUploadStore.cs   — implementa ICiirUploadStore, Dapper puro, mesmo estilo de
-                        IndexingRunStore.cs (PostgreSqlConnections.ExecuteAsync, sem
-                        BlogDoFT.Libs.DapperUtils — este repo não usa esse pacote apesar de
-                        referenciado; manter consistência com o que já existe, não introduzir
-                        um padrão novo isolado)
+CiirUploadStore.cs   — implementa ICiirUploadStore via IDatabaseFacade
+                        (BlogDoFT.Libs.DapperUtils), registrado como Scoped, igual aos demais
+                        stores (a facade mantém uma conexão por escopo)
 ```
 
 `ProjectStore.cs` (já existente) ganha a implementação de `GetByIdAsync`.

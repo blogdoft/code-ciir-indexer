@@ -1,7 +1,6 @@
+using BlogDoFT.Libs.DapperUtils.Abstractions;
 using Ciir.Indexer.Application.Ports;
 using Ciir.Indexer.Core;
-using Dapper;
-using Npgsql;
 
 namespace Ciir.Indexer.Infrastructure.PostgreSql;
 
@@ -69,29 +68,25 @@ public sealed class IndexingRunStore : IIndexingRunStore
         RETURNING public_id;
         """;
 
-    private readonly NpgsqlDataSource _dataSource;
+    private readonly IDatabaseFacade _database;
 
-    public IndexingRunStore(NpgsqlDataSource dataSource)
+    public IndexingRunStore(IDatabaseFacade database)
     {
-        _dataSource = dataSource;
+        _database = database;
     }
 
     public async Task<IndexingRun> CreateAsync(string path, long projectId, CancellationToken cancellationToken = default)
     {
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        var row = await PostgreSqlConnections.ExecuteAsync(() => connection.QuerySingleAsync<IndexingRunRow>(
-            new CommandDefinition(
-                InsertSql,
-                new
-                {
-                    Id = Guid.CreateVersion7(),
-                    Path = path,
-                    ProjectId = projectId,
-                    Status = IndexingStatus.Pending.ToWireString(),
-                    StartedAt = DateTimeOffset.UtcNow,
-                },
-                cancellationToken: cancellationToken)));
+        var row = await _database.QuerySingleAsync<IndexingRunRow>(
+            InsertSql,
+            new
+            {
+                Id = Guid.CreateVersion7(),
+                Path = path,
+                ProjectId = projectId,
+                Status = IndexingStatus.Pending.ToWireString(),
+                StartedAt = DateTimeOffset.UtcNow,
+            });
 
         return row.ToDomain();
     }
@@ -99,54 +94,38 @@ public sealed class IndexingRunStore : IIndexingRunStore
     public async Task UpdateCountersAsync(
         Guid runId, IndexingCounters counters, CancellationToken cancellationToken = default)
     {
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        await PostgreSqlConnections.ExecuteAsync(() => connection.ExecuteAsync(
-            new CommandDefinition(
-                UpdateCountersSql,
-                new
-                {
-                    RunId = runId,
-                    counters.DocumentsProcessed,
-                    counters.DocumentsInserted,
-                    counters.DocumentsUpdated,
-                    counters.EmbeddingsGenerated,
-                    counters.EmbeddingsReused,
-                    counters.RelationsProcessed,
-                    counters.RelationsResolved,
-                    counters.RelationsUnresolved,
-                },
-                cancellationToken: cancellationToken)));
+        await _database.ExecuteAsync(
+            UpdateCountersSql,
+            new
+            {
+                RunId = runId,
+                counters.DocumentsProcessed,
+                counters.DocumentsInserted,
+                counters.DocumentsUpdated,
+                counters.EmbeddingsGenerated,
+                counters.EmbeddingsReused,
+                counters.RelationsProcessed,
+                counters.RelationsResolved,
+                counters.RelationsUnresolved,
+            });
     }
 
     public async Task MarkStatusAsync(
         Guid runId, IndexingStatus status, string? error = null, CancellationToken cancellationToken = default)
     {
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        await PostgreSqlConnections.ExecuteAsync(() => connection.ExecuteAsync(
-            new CommandDefinition(
-                MarkStatusSql,
-                new { RunId = runId, Status = status.ToWireString(), Error = error },
-                cancellationToken: cancellationToken)));
+        await _database.ExecuteAsync(MarkStatusSql, new { RunId = runId, Status = status.ToWireString(), Error = error });
     }
 
     public async Task<IndexingRun?> GetAsync(Guid runId, CancellationToken cancellationToken = default)
     {
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        var row = await PostgreSqlConnections.ExecuteAsync(() => connection.QuerySingleOrDefaultAsync<IndexingRunRow?>(
-            new CommandDefinition(GetSql, new { RunId = runId }, cancellationToken: cancellationToken)));
+        var row = await _database.QuerySingleOrDefaultAsync<IndexingRunRow?>(GetSql, new { RunId = runId });
 
         return row?.ToDomain();
     }
 
     public async Task<IReadOnlyCollection<Guid>> ReconcileOrphanedRunsAsync(CancellationToken cancellationToken = default)
     {
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        var ids = await PostgreSqlConnections.ExecuteAsync(() => connection.QueryAsync<Guid>(
-            new CommandDefinition(ReconcileOrphanedRunsSql, cancellationToken: cancellationToken)));
+        var ids = await _database.QueryAsync<Guid>(ReconcileOrphanedRunsSql);
 
         return ids.ToList();
     }

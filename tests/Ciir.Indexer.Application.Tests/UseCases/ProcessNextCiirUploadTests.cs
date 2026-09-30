@@ -178,9 +178,11 @@ public sealed class ProcessNextCiirUploadTests
         var importDocuments = new ImportDocuments(
             _reader, _documentWriter, _embeddingGenerator, fingerprintGenerator, indexingOptions, NullLogger<ImportDocuments>.Instance);
         var importRelations = new ImportRelations(_reader, _relationWriter, indexingOptions, NullLogger<ImportRelations>.Instance);
+        var scopeFactory = SubstituteScopeFactory.For(
+            (typeof(ImportDocuments), importDocuments), (typeof(ImportRelations), importRelations));
         var resolveRelations = new ResolveRelations(_relationResolver);
         var runIndexation = new RunIndexation(
-            importDocuments, importRelations, resolveRelations, _documentWriter, _relationWriter, _runStore, NullLogger<RunIndexation>.Instance);
+            scopeFactory, resolveRelations, _documentWriter, _relationWriter, _runStore, NullLogger<RunIndexation>.Instance);
 
         return new ProcessNextCiirUpload(
             _uploadStore,

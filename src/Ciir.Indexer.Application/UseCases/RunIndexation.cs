@@ -1,5 +1,6 @@
 using Ciir.Indexer.Application.Ports;
 using Ciir.Indexer.Core;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 
@@ -15,8 +16,7 @@ namespace Ciir.Indexer.Application.UseCases;
 /// </summary>
 public sealed class RunIndexation
 {
-    private readonly ImportDocuments _importDocuments;
-    private readonly ImportRelations _importRelations;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ResolveRelations _resolveRelations;
     private readonly ICiirDocumentWriter _documentWriter;
     private readonly ICiirRelationWriter _relationWriter;
@@ -24,16 +24,14 @@ public sealed class RunIndexation
     private readonly ILogger<RunIndexation> _logger;
 
     public RunIndexation(
-        ImportDocuments importDocuments,
-        ImportRelations importRelations,
+        IServiceScopeFactory scopeFactory,
         ResolveRelations resolveRelations,
         ICiirDocumentWriter documentWriter,
         ICiirRelationWriter relationWriter,
         IIndexingRunStore runStore,
         ILogger<RunIndexation> logger)
     {
-        _importDocuments = importDocuments;
-        _importRelations = importRelations;
+        _scopeFactory = scopeFactory;
         _resolveRelations = resolveRelations;
         _documentWriter = documentWriter;
         _relationWriter = relationWriter;
@@ -60,8 +58,10 @@ public sealed class RunIndexation
         {
             await _runStore.MarkStatusAsync(runId, IndexingStatus.Running, cancellationToken: cancellationToken);
 
-            var documentsTask = _importDocuments.ExecuteAsync(path, runId, projectId, cancellationToken);
-            var relationsTask = _importRelations.ExecuteAsync(path, runId, projectId, cancellationToken);
+            var documentsTask = InOwnScopeAsync(
+                imports => imports.GetRequiredService<ImportDocuments>().ExecuteAsync(path, runId, projectId, cancellationToken));
+            var relationsTask = InOwnScopeAsync(
+                imports => imports.GetRequiredService<ImportRelations>().ExecuteAsync(path, runId, projectId, cancellationToken));
             await Task.WhenAll(documentsTask, relationsTask);
             var documentsResult = await documentsTask;
             var relationsResult = await relationsTask;
@@ -140,5 +140,14 @@ public sealed class RunIndexation
             relationsPerSecond,
             counters.RelationsResolved,
             counters.RelationsUnresolved);
+    }
+
+    // Each concurrent import gets its own DI scope: the scoped database facade holds a single
+    // connection, which cannot run two commands at the same time.
+    private async Task<ImportResult> InOwnScopeAsync(Func<IServiceProvider, Task<ImportResult>> import)
+    {
+        await using var scope = _scopeFactory.CreateAsyncScope();
+
+        return await import(scope.ServiceProvider);
     }
 }

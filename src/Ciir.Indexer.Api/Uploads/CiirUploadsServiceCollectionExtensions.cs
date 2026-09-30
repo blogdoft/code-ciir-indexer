@@ -24,18 +24,18 @@ public static class CiirUploadsServiceCollectionExtensions
         this IServiceCollection services, S3Options objectStorageOptions, UploadOptions uploadOptions)
     {
         services.AddSingleton(uploadOptions);
-        services.AddSingleton(sp => new SubmitCiirUpload(
+        services.AddScoped(sp => new SubmitCiirUpload(
             sp.GetRequiredService<IProjectStore>(),
             sp.GetRequiredService<IObjectStorage>(),
             sp.GetRequiredService<ICiirUploadStore>(),
             objectStorageOptions.BucketName,
             uploadOptions));
-        services.AddSingleton(sp => new RegisterCiirUpload(
+        services.AddScoped(sp => new RegisterCiirUpload(
             sp.GetRequiredService<IProjectStore>(),
             sp.GetRequiredService<IObjectStorage>(),
             sp.GetRequiredService<ICiirUploadStore>(),
             objectStorageOptions.BucketName));
-        services.AddSingleton(sp => new ProcessNextCiirUpload(
+        services.AddScoped(sp => new ProcessNextCiirUpload(
             sp.GetRequiredService<ICiirUploadStore>(),
             sp.GetRequiredService<IObjectStorage>(),
             sp.GetRequiredService<IProjectStore>(),

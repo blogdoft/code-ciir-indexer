@@ -1,6 +1,5 @@
+using BlogDoFT.Libs.DapperUtils.Abstractions;
 using Ciir.Indexer.Application.Ports;
-using Dapper;
-using Npgsql;
 
 namespace Ciir.Indexer.Infrastructure.PostgreSql;
 
@@ -107,43 +106,37 @@ public sealed class RelationResolver : IRelationResolver
         WHERE project_id = @ProjectId;
         """;
 
-    private readonly NpgsqlDataSource _dataSource;
+    private readonly IDatabaseFacade _database;
 
-    public RelationResolver(NpgsqlDataSource dataSource)
+    public RelationResolver(IDatabaseFacade database)
     {
-        _dataSource = dataSource;
+        _database = database;
     }
 
     public async Task<RelationResolutionCounters> ResolveAsync(
         long projectId, IReadOnlyCollection<long> allProjectIds, CancellationToken cancellationToken = default)
     {
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        var parameters = new { ProjectId = projectId };
+        var solutionParameters = new { ProjectId = projectId, AllProjectIds = allProjectIds.ToArray() };
 
-        try
+        await using (var transaction = await _database.BeginTransactionAsync(cancellationToken))
         {
-            var parameters = new { ProjectId = projectId };
-            var solutionParameters = new { ProjectId = projectId, AllProjectIds = allProjectIds.ToArray() };
+            try
+            {
+                await _database.ExecuteAsync(ResolveSourceSql, parameters, transaction);
+                await _database.ExecuteAsync(ResolveTargetByCiirIdSql, parameters, transaction);
+                await _database.ExecuteAsync(ResolveTargetBySymbolSql, parameters, transaction);
+                await _database.ExecuteAsync(ResolveTargetAcrossSolutionBySymbolSql, solutionParameters, transaction);
 
-            await PostgreSqlConnections.ExecuteAsync(() => connection.ExecuteAsync(
-                new CommandDefinition(ResolveSourceSql, parameters, transaction, cancellationToken: cancellationToken)));
-            await PostgreSqlConnections.ExecuteAsync(() => connection.ExecuteAsync(
-                new CommandDefinition(ResolveTargetByCiirIdSql, parameters, transaction, cancellationToken: cancellationToken)));
-            await PostgreSqlConnections.ExecuteAsync(() => connection.ExecuteAsync(
-                new CommandDefinition(ResolveTargetBySymbolSql, parameters, transaction, cancellationToken: cancellationToken)));
-            await PostgreSqlConnections.ExecuteAsync(() => connection.ExecuteAsync(
-                new CommandDefinition(ResolveTargetAcrossSolutionBySymbolSql, solutionParameters, transaction, cancellationToken: cancellationToken)));
-
-            var counters = await PostgreSqlConnections.ExecuteAsync(() => connection.QuerySingleAsync<RelationResolutionCounters>(
-                new CommandDefinition(CountersSql, parameters, transaction, cancellationToken: cancellationToken)));
-
-            await transaction.CommitAsync(cancellationToken);
-            return counters;
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                throw;
+            }
         }
-        catch
-        {
-            await transaction.RollbackAsync(cancellationToken);
-            throw;
-        }
+
+        return await _database.QuerySingleAsync<RelationResolutionCounters>(CountersSql, parameters);
     }
 }

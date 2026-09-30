@@ -56,16 +56,14 @@ public sealed class DatabaseMigrator : IWarmUpCommand
 
         // pg_advisory_lock is session-scoped: it must be released on the same connection that
         // acquired it, so the lock/migrate/unlock sequence below stays on this one connection.
-        await PostgreSqlConnections.ExecuteAsync(() => connection.ExecuteAsync(
-            new CommandDefinition("SELECT pg_advisory_lock(@Key);", new { Key = AdvisoryLockKey })));
+        await connection.ExecuteAsync("SELECT pg_advisory_lock(@Key);", new { Key = AdvisoryLockKey });
         try
         {
             Apply();
         }
         finally
         {
-            await PostgreSqlConnections.ExecuteAsync(() => connection.ExecuteAsync(
-                new CommandDefinition("SELECT pg_advisory_unlock(@Key);", new { Key = AdvisoryLockKey })));
+            await connection.ExecuteAsync("SELECT pg_advisory_unlock(@Key);", new { Key = AdvisoryLockKey });
         }
     }
 

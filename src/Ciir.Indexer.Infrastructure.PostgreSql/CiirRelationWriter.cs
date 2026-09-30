@@ -1,7 +1,6 @@
+using BlogDoFT.Libs.DapperUtils.Abstractions;
 using Ciir.Indexer.Application.Ports;
 using Ciir.Indexer.Core;
-using Dapper;
-using Npgsql;
 
 namespace Ciir.Indexer.Infrastructure.PostgreSql;
 
@@ -35,12 +34,12 @@ public sealed class CiirRelationWriter : ICiirRelationWriter
         WHERE project_id = @ProjectId AND (last_seen_run_id IS NULL OR last_seen_run_id != @CurrentRunId);
         """;
 
-    private readonly NpgsqlDataSource _dataSource;
+    private readonly IDatabaseFacade _database;
     private readonly IRelationIdentityKeyGenerator _identityKeyGenerator;
 
-    public CiirRelationWriter(NpgsqlDataSource dataSource, IRelationIdentityKeyGenerator identityKeyGenerator)
+    public CiirRelationWriter(IDatabaseFacade database, IRelationIdentityKeyGenerator identityKeyGenerator)
     {
-        _dataSource = dataSource;
+        _database = database;
         _identityKeyGenerator = identityKeyGenerator;
     }
 
@@ -55,23 +54,21 @@ public sealed class CiirRelationWriter : ICiirRelationWriter
             return;
         }
 
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await _database.BeginTransactionAsync(cancellationToken);
 
         try
         {
             foreach (var relation in batch)
             {
-                await PostgreSqlConnections.ExecuteAsync(() => connection.ExecuteAsync(
-                    new CommandDefinition(
-                        UpsertSql, ToUpsertParameters(relation, projectId, runId), transaction, cancellationToken: cancellationToken)));
+                cancellationToken.ThrowIfCancellationRequested();
+                await _database.ExecuteAsync(UpsertSql, ToUpsertParameters(relation, projectId, runId), transaction);
             }
 
             await transaction.CommitAsync(cancellationToken);
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken);
+            await transaction.RollbackAsync(CancellationToken.None);
             throw;
         }
     }
@@ -79,13 +76,7 @@ public sealed class CiirRelationWriter : ICiirRelationWriter
     public async Task<long> DeleteStaleAsync(
         long projectId, Guid currentRunId, CancellationToken cancellationToken = default)
     {
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        return await PostgreSqlConnections.ExecuteAsync(() => connection.ExecuteAsync(
-            new CommandDefinition(
-                DeleteStaleSql,
-                new { ProjectId = projectId, CurrentRunId = currentRunId },
-                cancellationToken: cancellationToken)));
+        return await _database.ExecuteAsync(DeleteStaleSql, new { ProjectId = projectId, CurrentRunId = currentRunId });
     }
 
     private static string ToDb(RelationResolutionStatus status) => status switch

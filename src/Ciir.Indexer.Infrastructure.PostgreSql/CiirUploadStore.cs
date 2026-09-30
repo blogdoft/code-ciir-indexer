@@ -1,7 +1,6 @@
+using BlogDoFT.Libs.DapperUtils.Abstractions;
 using Ciir.Indexer.Application.Ports;
 using Ciir.Indexer.Core;
-using Dapper;
-using Npgsql;
 
 namespace Ciir.Indexer.Infrastructure.PostgreSql;
 
@@ -91,31 +90,27 @@ public sealed class CiirUploadStore : ICiirUploadStore
         FROM ciir_uploads WHERE public_id = @UploadId;
         """;
 
-    private readonly NpgsqlDataSource _dataSource;
+    private readonly IDatabaseFacade _database;
 
-    public CiirUploadStore(NpgsqlDataSource dataSource)
+    public CiirUploadStore(IDatabaseFacade database)
     {
-        _dataSource = dataSource;
+        _database = database;
     }
 
     public async Task<CiirUpload> CreateAsync(
         long projectId, string bucket, string objectKey, CancellationToken cancellationToken = default)
     {
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        var row = await PostgreSqlConnections.ExecuteAsync(() => connection.QuerySingleAsync<CiirUploadRow>(
-            new CommandDefinition(
-                CreateSql,
-                new
-                {
-                    Id = Guid.CreateVersion7(),
-                    ProjectId = projectId,
-                    Bucket = bucket,
-                    ObjectKey = objectKey,
-                    Status = CiirUploadStatus.Pending.ToWireString(),
-                    CreatedAt = DateTimeOffset.UtcNow,
-                },
-                cancellationToken: cancellationToken)));
+        var row = await _database.QuerySingleAsync<CiirUploadRow>(
+            CreateSql,
+            new
+            {
+                Id = Guid.CreateVersion7(),
+                ProjectId = projectId,
+                Bucket = bucket,
+                ObjectKey = objectKey,
+                Status = CiirUploadStatus.Pending.ToWireString(),
+                CreatedAt = DateTimeOffset.UtcNow,
+            });
 
         return row.ToDomain();
     }
@@ -123,13 +118,9 @@ public sealed class CiirUploadStore : ICiirUploadStore
     public async Task<CiirUpload?> ClaimNextAsync(
         TimeSpan stuckProcessingTimeout, int maxRetryCount, CancellationToken cancellationToken = default)
     {
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        var row = await PostgreSqlConnections.ExecuteAsync(() => connection.QuerySingleOrDefaultAsync<CiirUploadRow?>(
-            new CommandDefinition(
-                ClaimNextSql,
-                new { StuckTimeoutMinutes = stuckProcessingTimeout.TotalMinutes, MaxRetryCount = maxRetryCount },
-                cancellationToken: cancellationToken)));
+        var row = await _database.QuerySingleOrDefaultAsync<CiirUploadRow?>(
+            ClaimNextSql,
+            new { StuckTimeoutMinutes = stuckProcessingTimeout.TotalMinutes, MaxRetryCount = maxRetryCount });
 
         return row?.ToDomain();
     }
@@ -137,51 +128,31 @@ public sealed class CiirUploadStore : ICiirUploadStore
     public async Task<IReadOnlyList<CiirUpload>> ReclaimExhaustedAsync(
         TimeSpan stuckProcessingTimeout, int maxRetryCount, CancellationToken cancellationToken = default)
     {
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        var rows = await PostgreSqlConnections.ExecuteAsync(() => connection.QueryAsync<CiirUploadRow>(
-            new CommandDefinition(
-                ReclaimExhaustedSql,
-                new { StuckTimeoutMinutes = stuckProcessingTimeout.TotalMinutes, MaxRetryCount = maxRetryCount },
-                cancellationToken: cancellationToken)));
+        var rows = await _database.QueryAsync<CiirUploadRow>(
+            ReclaimExhaustedSql,
+            new { StuckTimeoutMinutes = stuckProcessingTimeout.TotalMinutes, MaxRetryCount = maxRetryCount });
 
         return rows.Select(row => row.ToDomain()).ToList();
     }
 
     public async Task MarkIndexingRunAsync(Guid uploadId, Guid indexingRunId, CancellationToken cancellationToken = default)
     {
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        await PostgreSqlConnections.ExecuteAsync(() => connection.ExecuteAsync(
-            new CommandDefinition(
-                MarkIndexingRunSql,
-                new { UploadId = uploadId, IndexingRunId = indexingRunId },
-                cancellationToken: cancellationToken)));
+        await _database.ExecuteAsync(MarkIndexingRunSql, new { UploadId = uploadId, IndexingRunId = indexingRunId });
     }
 
     public async Task MarkProcessedAsync(Guid uploadId, CancellationToken cancellationToken = default)
     {
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        await PostgreSqlConnections.ExecuteAsync(() => connection.ExecuteAsync(
-            new CommandDefinition(MarkProcessedSql, new { UploadId = uploadId }, cancellationToken: cancellationToken)));
+        await _database.ExecuteAsync(MarkProcessedSql, new { UploadId = uploadId });
     }
 
     public async Task MarkFailedAsync(Guid uploadId, string error, CancellationToken cancellationToken = default)
     {
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        await PostgreSqlConnections.ExecuteAsync(() => connection.ExecuteAsync(
-            new CommandDefinition(
-                MarkFailedSql, new { UploadId = uploadId, Error = error }, cancellationToken: cancellationToken)));
+        await _database.ExecuteAsync(MarkFailedSql, new { UploadId = uploadId, Error = error });
     }
 
     public async Task<CiirUpload?> GetAsync(Guid uploadId, CancellationToken cancellationToken = default)
     {
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        var row = await PostgreSqlConnections.ExecuteAsync(() => connection.QuerySingleOrDefaultAsync<CiirUploadRow?>(
-            new CommandDefinition(GetSql, new { UploadId = uploadId }, cancellationToken: cancellationToken)));
+        var row = await _database.QuerySingleOrDefaultAsync<CiirUploadRow?>(GetSql, new { UploadId = uploadId });
 
         return row?.ToDomain();
     }

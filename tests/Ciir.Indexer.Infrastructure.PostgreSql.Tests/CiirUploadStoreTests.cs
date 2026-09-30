@@ -18,6 +18,7 @@ public sealed class CiirUploadStoreTests : IAsyncLifetime
 {
     private const string Bucket = "ciir-uploads";
 
+    private readonly PostgreSqlFixture _fixture;
     private readonly ICiirUploadStore _sut;
     private readonly IProjectStore _projectStore;
     private readonly IIndexingRunStore _runStore;
@@ -25,6 +26,7 @@ public sealed class CiirUploadStoreTests : IAsyncLifetime
 
     public CiirUploadStoreTests(PostgreSqlFixture fixture)
     {
+        _fixture = fixture;
         _sut = fixture.Services.GetRequiredService<ICiirUploadStore>();
         _projectStore = fixture.Services.GetRequiredService<IProjectStore>();
         _runStore = fixture.Services.GetRequiredService<IIndexingRunStore>();
@@ -126,9 +128,14 @@ public sealed class CiirUploadStoreTests : IAsyncLifetime
         var first = await _sut.CreateAsync(projectId, Bucket, NewObjectKey());
         var second = await _sut.CreateAsync(projectId, Bucket, NewObjectKey());
 
+        await using var firstWorkerScope = _fixture.Services.CreateAsyncScope();
+        await using var secondWorkerScope = _fixture.Services.CreateAsyncScope();
+        var firstWorker = firstWorkerScope.ServiceProvider.GetRequiredService<ICiirUploadStore>();
+        var secondWorker = secondWorkerScope.ServiceProvider.GetRequiredService<ICiirUploadStore>();
+
         var results = await Task.WhenAll(
-            _sut.ClaimNextAsync(TimeSpan.FromMinutes(30), maxRetryCount: 3),
-            _sut.ClaimNextAsync(TimeSpan.FromMinutes(30), maxRetryCount: 3));
+            firstWorker.ClaimNextAsync(TimeSpan.FromMinutes(30), maxRetryCount: 3),
+            secondWorker.ClaimNextAsync(TimeSpan.FromMinutes(30), maxRetryCount: 3));
 
         var claimedIds = results.Where(r => r is not null).Select(r => r!.Id).ToList();
         claimedIds.ShouldBe([first.Id, second.Id], ignoreOrder: true);

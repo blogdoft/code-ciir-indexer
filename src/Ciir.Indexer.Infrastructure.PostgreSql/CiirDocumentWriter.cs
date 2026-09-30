@@ -1,6 +1,5 @@
+using BlogDoFT.Libs.DapperUtils.Abstractions;
 using Ciir.Indexer.Application.Ports;
-using Dapper;
-using Npgsql;
 using Pgvector;
 
 namespace Ciir.Indexer.Infrastructure.PostgreSql;
@@ -58,16 +57,16 @@ public sealed class CiirDocumentWriter : ICiirDocumentWriter
         WHERE project_id = @ProjectId AND (last_seen_run_id IS NULL OR last_seen_run_id != @CurrentRunId);
         """;
 
-    private readonly NpgsqlDataSource _dataSource;
+    private readonly IDatabaseFacade _database;
 
     static CiirDocumentWriter()
     {
         VectorTypeHandler.Register();
     }
 
-    public CiirDocumentWriter(NpgsqlDataSource dataSource)
+    public CiirDocumentWriter(IDatabaseFacade database)
     {
-        _dataSource = dataSource;
+        _database = database;
     }
 
     public async Task<IReadOnlyDictionary<string, string?>> GetExistingFingerprintsAsync(
@@ -78,13 +77,9 @@ public sealed class CiirDocumentWriter : ICiirDocumentWriter
             return new Dictionary<string, string?>();
         }
 
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        var rows = await PostgreSqlConnections.ExecuteAsync(() => connection.QueryAsync<(string CiirId, string? EmbeddingFingerprintHash)>(
-            new CommandDefinition(
-                GetExistingFingerprintsSql,
-                new { ProjectId = projectId, CiirIds = ciirIds.ToArray() },
-                cancellationToken: cancellationToken)));
+        var rows = await _database.QueryAsync<(string CiirId, string? EmbeddingFingerprintHash)>(
+            GetExistingFingerprintsSql,
+            new { ProjectId = projectId, CiirIds = ciirIds.ToArray() });
 
         return rows.ToDictionary(row => row.CiirId, row => row.EmbeddingFingerprintHash);
     }
@@ -100,23 +95,21 @@ public sealed class CiirDocumentWriter : ICiirDocumentWriter
             return;
         }
 
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await using var transaction = await _database.BeginTransactionAsync(cancellationToken);
 
         try
         {
             foreach (var upsert in batch)
             {
-                await PostgreSqlConnections.ExecuteAsync(() => connection.ExecuteAsync(
-                    new CommandDefinition(
-                        UpsertSql, ToUpsertParameters(upsert, projectId, runId), transaction, cancellationToken: cancellationToken)));
+                cancellationToken.ThrowIfCancellationRequested();
+                await _database.ExecuteAsync(UpsertSql, ToUpsertParameters(upsert, projectId, runId), transaction);
             }
 
             await transaction.CommitAsync(cancellationToken);
         }
         catch
         {
-            await transaction.RollbackAsync(cancellationToken);
+            await transaction.RollbackAsync(CancellationToken.None);
             throw;
         }
     }
@@ -124,13 +117,7 @@ public sealed class CiirDocumentWriter : ICiirDocumentWriter
     public async Task<long> DeleteStaleAsync(
         long projectId, Guid currentRunId, CancellationToken cancellationToken = default)
     {
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        return await PostgreSqlConnections.ExecuteAsync(() => connection.ExecuteAsync(
-            new CommandDefinition(
-                DeleteStaleSql,
-                new { ProjectId = projectId, CurrentRunId = currentRunId },
-                cancellationToken: cancellationToken)));
+        return await _database.ExecuteAsync(DeleteStaleSql, new { ProjectId = projectId, CurrentRunId = currentRunId });
     }
 
     private static object ToUpsertParameters(CiirDocumentUpsert upsert, long projectId, Guid runId)

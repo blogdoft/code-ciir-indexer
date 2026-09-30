@@ -13,17 +13,17 @@ namespace Ciir.Indexer.Api.Uploads;
 /// </summary>
 public sealed class CiirUploadWorker : BackgroundService
 {
-    private readonly ProcessNextCiirUpload _processNext;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly UploadOptions _options;
     private readonly ILogger<CiirUploadWorker> _logger;
 
     /// <summary>Initializes a new instance of the <see cref="CiirUploadWorker"/> class.</summary>
-    /// <param name="processNext">Claims and processes at most one upload per call.</param>
+    /// <param name="scopeFactory">Creates the scope, and so the database connection, each cycle runs in.</param>
     /// <param name="options">Configures the polling interval.</param>
     /// <param name="logger">Logs unexpected failures so a single bad upload never crashes the host.</param>
-    public CiirUploadWorker(ProcessNextCiirUpload processNext, UploadOptions options, ILogger<CiirUploadWorker> logger)
+    public CiirUploadWorker(IServiceScopeFactory scopeFactory, UploadOptions options, ILogger<CiirUploadWorker> logger)
     {
-        _processNext = processNext;
+        _scopeFactory = scopeFactory;
         _options = options;
         _logger = logger;
     }
@@ -48,7 +48,10 @@ public sealed class CiirUploadWorker : BackgroundService
     {
         try
         {
-            return await _processNext.ExecuteAsync(stoppingToken);
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var processNext = scope.ServiceProvider.GetRequiredService<ProcessNextCiirUpload>();
+
+            return await processNext.ExecuteAsync(stoppingToken);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {

@@ -1,3 +1,4 @@
+using BlogDoFT.Libs.DapperUtils.Postgres;
 using Ciir.Indexer.Application.Ports;
 using Ciir.Indexer.Core;
 using Ciir.Indexer.Infrastructure.PostgreSql.Migrations;
@@ -18,7 +19,9 @@ public static class ServiceCollectionExtensions
 
         var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
         dataSourceBuilder.UseVector();
-        services.AddSingleton(dataSourceBuilder.Build());
+        var dataSource = dataSourceBuilder.Build();
+        services.AddSingleton(dataSource);
+        services.AddDapperPostgres(new NpgsqlConnectionFactory(dataSource));
 
         // No .AddFluentMigratorConsole() here: that writes its own plain-text lines straight to the
         // console outside Microsoft.Extensions.Logging, which would bypass the app-wide JSON
@@ -31,12 +34,12 @@ public static class ServiceCollectionExtensions
                 .ScanIn(typeof(InitialSchema).Assembly).For.Migrations().For.VersionTableMetaData());
         services.AddSingleton<DatabaseMigrator>();
 
-        services.AddSingleton<IProjectStore, ProjectStore>();
-        services.AddSingleton<ICiirDocumentWriter, CiirDocumentWriter>();
-        services.AddSingleton<ICiirRelationWriter, CiirRelationWriter>();
-        services.AddSingleton<IIndexingRunStore, IndexingRunStore>();
-        services.AddSingleton<ICiirUploadStore, CiirUploadStore>();
-        services.AddSingleton<IRelationResolver, RelationResolver>();
+        services.AddScoped<IProjectStore, ProjectStore>();
+        services.AddScoped<ICiirDocumentWriter, CiirDocumentWriter>();
+        services.AddScoped<ICiirRelationWriter, CiirRelationWriter>();
+        services.AddScoped<IIndexingRunStore, IndexingRunStore>();
+        services.AddScoped<ICiirUploadStore, CiirUploadStore>();
+        services.AddScoped<IRelationResolver, RelationResolver>();
         services.AddSingleton<IRelationIdentityKeyGenerator, RelationIdentityKeyGenerator>();
 
         return services;

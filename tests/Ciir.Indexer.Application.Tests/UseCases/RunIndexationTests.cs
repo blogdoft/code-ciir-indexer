@@ -206,10 +206,12 @@ public sealed class RunIndexationTests : IDisposable
             _reader, _documentWriter, _embeddingGenerator, _fingerprintGenerator, _options, NullLogger<ImportDocuments>.Instance);
         var importRelations = new ImportRelations(
             _reader, _relationWriter, _options, NullLogger<ImportRelations>.Instance);
+        var scopeFactory = SubstituteScopeFactory.For(
+            (typeof(ImportDocuments), importDocuments), (typeof(ImportRelations), importRelations));
         var resolveRelations = new ResolveRelations(_relationResolver);
 
         return new RunIndexation(
-            importDocuments, importRelations, resolveRelations, _documentWriter, _relationWriter, _runStore, NullLogger<RunIndexation>.Instance);
+            scopeFactory, resolveRelations, _documentWriter, _relationWriter, _runStore, NullLogger<RunIndexation>.Instance);
     }
 
     private string WriteJsonl(params string[] lines)

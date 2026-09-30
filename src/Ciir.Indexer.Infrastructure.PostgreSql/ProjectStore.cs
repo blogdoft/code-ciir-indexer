@@ -3,8 +3,6 @@ using BlogDoFT.Libs.DapperUtils.Abstractions.Extensions;
 using BlogDoFT.Libs.DapperUtils.Postgres;
 using Ciir.Indexer.Application.Ports;
 using Ciir.Indexer.Core;
-using Dapper;
-using Npgsql;
 
 namespace Ciir.Indexer.Infrastructure.PostgreSql;
 
@@ -36,29 +34,23 @@ public sealed class ProjectStore : IProjectStore
     private static readonly string GetByIdSql = $"{ResultSet} WHERE id = @Id;";
     private static readonly string GetByPublicIdSql = $"{ResultSet} WHERE public_id = @PublicId;";
 
-    private readonly NpgsqlDataSource _dataSource;
+    private readonly IDatabaseFacade _database;
 
-    public ProjectStore(NpgsqlDataSource dataSource)
+    public ProjectStore(IDatabaseFacade database)
     {
-        _dataSource = dataSource;
+        _database = database;
     }
 
     public async Task<Project?> GetByIdAsync(long id, CancellationToken cancellationToken = default)
     {
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        var row = await PostgreSqlConnections.ExecuteAsync(() => connection.QuerySingleOrDefaultAsync<ProjectRow?>(
-            new CommandDefinition(GetByIdSql, new { Id = id }, cancellationToken: cancellationToken)));
+        var row = await _database.QuerySingleOrDefaultAsync<ProjectRow?>(GetByIdSql, new { Id = id });
 
         return row?.ToDomain();
     }
 
     public async Task<Project?> GetByPublicIdAsync(Guid publicId, CancellationToken cancellationToken = default)
     {
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        var row = await PostgreSqlConnections.ExecuteAsync(() => connection.QuerySingleOrDefaultAsync<ProjectRow?>(
-            new CommandDefinition(GetByPublicIdSql, new { PublicId = publicId }, cancellationToken: cancellationToken)));
+        var row = await _database.QuerySingleOrDefaultAsync<ProjectRow?>(GetByPublicIdSql, new { PublicId = publicId });
 
         return row?.ToDomain();
     }
@@ -69,21 +61,15 @@ public sealed class ProjectStore : IProjectStore
         string? gitRawUrl,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        var row = await PostgreSqlConnections.ExecuteAsync(() => connection.QuerySingleAsync<ProjectRow>(
-            new CommandDefinition(
-                UpsertSql,
-                new
-                {
-                    // Discarded when the row already exists (ON CONFLICT DO UPDATE never touches
-                    // public_id), so the project keeps the public_id it was first created with.
-                    PublicId = Guid.CreateVersion7(),
-                    Name = name,
-                    GitUrl = gitUrl,
-                    GitRawUrl = gitRawUrl,
-                },
-                cancellationToken: cancellationToken)));
+        var row = await _database.QuerySingleAsync<ProjectRow>(UpsertSql, new
+        {
+            // Discarded when the row already exists (ON CONFLICT DO UPDATE never touches
+            // public_id), so the project keeps the public_id it was first created with.
+            PublicId = Guid.CreateVersion7(),
+            Name = name,
+            GitUrl = gitUrl,
+            GitRawUrl = gitRawUrl,
+        });
 
         return row.ToDomain();
     }
@@ -106,13 +92,9 @@ public sealed class ProjectStore : IProjectStore
             .Build();
 #pragma warning restore S2077
 
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        var itemsCommand = new CommandDefinition(query.ToString(), new { NameFilter = nameFilter }, cancellationToken: cancellationToken);
-        var countCommand = new CommandDefinition(querySize.ToString(), new { NameFilter = nameFilter }, cancellationToken: cancellationToken);
-
-        var rows = await PostgreSqlConnections.ExecuteAsync(() => connection.QueryAsync<ProjectRow>(itemsCommand));
-        var totalCount = await PostgreSqlConnections.ExecuteAsync(() => connection.ExecuteScalarAsync<long>(countCommand));
+        var parameters = new { NameFilter = nameFilter };
+        var rows = await _database.QueryAsync<ProjectRow>(query.ToString(), parameters);
+        var totalCount = await _database.ExecuteScalarAsync<long>(querySize.ToString(), parameters);
 
         return (rows.Select(r => r.ToDomain()).ToList(), totalCount);
     }
@@ -127,11 +109,9 @@ public sealed class ProjectStore : IProjectStore
 
         var sql = $"SELECT EXISTS (SELECT 1 FROM projects {where})";
 
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-        var command = new CommandDefinition(sql, new { Name = name, ExcludingId = excludingId }, cancellationToken: cancellationToken);
 #pragma warning restore S2077
 
-        return await PostgreSqlConnections.ExecuteAsync(() => connection.ExecuteScalarAsync<bool>(command));
+        return await _database.ExecuteScalarAsync<bool>(sql, new { Name = name, ExcludingId = excludingId });
     }
 
     public async Task<Project> InsertAsync(
@@ -148,19 +128,13 @@ public sealed class ProjectStore : IProjectStore
                 created_at AS "CreatedAt", updated_at AS "UpdatedAt";
             """;
 
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        var row = await PostgreSqlConnections.ExecuteAsync(() => connection.QuerySingleAsync<ProjectRow>(
-            new CommandDefinition(
-                Sql,
-                new
-                {
-                    PublicId = Guid.CreateVersion7(),
-                    Name = name,
-                    GitUrl = gitUrl,
-                    GitRawUrl = gitRawUrl,
-                },
-                cancellationToken: cancellationToken)));
+        var row = await _database.QuerySingleAsync<ProjectRow>(Sql, new
+        {
+            PublicId = Guid.CreateVersion7(),
+            Name = name,
+            GitUrl = gitUrl,
+            GitRawUrl = gitRawUrl,
+        });
 
         return row.ToDomain();
     }
@@ -184,19 +158,13 @@ public sealed class ProjectStore : IProjectStore
                 created_at AS "CreatedAt", updated_at AS "UpdatedAt";
             """;
 
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-
-        var row = await PostgreSqlConnections.ExecuteAsync(() => connection.QuerySingleOrDefaultAsync<ProjectRow?>(
-            new CommandDefinition(
-                Sql,
-                new
-                {
-                    Id = id,
-                    Name = name,
-                    GitUrl = gitUrl,
-                    GitRawUrl = gitRawUrl,
-                },
-                cancellationToken: cancellationToken)));
+        var row = await _database.QuerySingleOrDefaultAsync<ProjectRow?>(Sql, new
+        {
+            Id = id,
+            Name = name,
+            GitUrl = gitUrl,
+            GitRawUrl = gitRawUrl,
+        });
 
         return row?.ToDomain();
     }
@@ -205,9 +173,7 @@ public sealed class ProjectStore : IProjectStore
     {
         const string Sql = "DELETE FROM projects WHERE id = @Id;";
 
-        await using var connection = await PostgreSqlConnections.OpenAsync(_dataSource, cancellationToken);
-        var affected = await PostgreSqlConnections.ExecuteAsync(() => connection.ExecuteAsync(
-            new CommandDefinition(Sql, new { Id = id }, cancellationToken: cancellationToken)));
+        var affected = await _database.ExecuteAsync(Sql, new { Id = id });
 
         return affected > 0;
     }

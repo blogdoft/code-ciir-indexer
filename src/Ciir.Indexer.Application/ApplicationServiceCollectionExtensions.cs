@@ -16,15 +16,15 @@ public static class ApplicationServiceCollectionExtensions
         services.AddSingleton<IEmbeddingFingerprintGenerator, EmbeddingFingerprintGenerator>();
         services.AddSingleton<ICiirJsonlReader, JsonlCiirReader>();
 
-        services.AddSingleton<ImportDocuments>();
-        services.AddSingleton<ImportRelations>();
-        services.AddSingleton<ResolveRelations>();
-        services.AddSingleton<RunIndexation>();
+        services.AddScoped<ImportDocuments>();
+        services.AddScoped<ImportRelations>();
+        services.AddScoped<ResolveRelations>();
+        services.AddScoped<RunIndexation>();
 
-        services.AddSingleton<ListProjects>();
-        services.AddSingleton<CreateProject>();
-        services.AddSingleton<UpdateProject>();
-        services.AddSingleton<DeleteProject>();
+        services.AddScoped<ListProjects>();
+        services.AddScoped<CreateProject>();
+        services.AddScoped<UpdateProject>();
+        services.AddScoped<DeleteProject>();
 
         return services;
     }
