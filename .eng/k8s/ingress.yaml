@@ -37,3 +37,25 @@ spec:
                 name: code-ciir-indexer
                 port:
                   name: http
+---
+# Public exposure through the Cloudflare Tunnel (k3s-apps: artifacts/platform/cloudflare-tunnel). DNS and the
+# certificate come from the code-rag-front-public Ingress, which owns the blogdoft.dev host.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: code-ciir-indexer-public
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: code-brain-code-ciir-indexer-strip-code-brain@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: blogdoft.dev
+      http:
+        paths:
+          - path: /code-brain/api/indexer
+            pathType: Prefix
+            backend:
+              service:
+                name: code-ciir-indexer
+                port:
+                  name: http
