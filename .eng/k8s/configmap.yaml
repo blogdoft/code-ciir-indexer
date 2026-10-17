@@ -72,26 +72,26 @@ data:
   # "code-brain" client/audience used across the code-brain apps, not a per-app one.
   #
   # MetadataAddress/RequireHttpsMetadata=false: this pod's container image doesn't trust the private
-  # CA that signs keycloak.home.arpa's certificate (nothing in this repo installs it), so fetching
+  # CA that signs keycloak.blogdoft.dev's certificate (nothing in this repo installs it), so fetching
   # the discovery document/JWKS from the public Authority over HTTPS fails TLS verification. Keycloak
   # is also reachable in-cluster over plain HTTP via its own Service, and its discovery document
-  # reports the same public issuer ("https://keycloak.home.arpa/realms/k8s") regardless of which
+  # reports the same public issuer ("https://keycloak.blogdoft.dev/realms/k8s") regardless of which
   # address served it - so fetching the *discovery document* from there avoids the TLS problem for
   # that one request. Authority itself is untouched and still stays the public URL used for issuer
   # validation and the Swagger "Authorize" button.
   #
   # This alone is NOT enough, though: the discovery document's own `jwks_uri` field is still
-  # Keycloak's public https://keycloak.home.arpa (it always reports its own external hostname there,
+  # Keycloak's public https://keycloak.blogdoft.dev (it always reports its own external hostname there,
   # regardless of which address served the document), so the actual signing-key fetch still goes out
   # over HTTPS to the untrusted-CA host and still fails - every request 401s, even with a fully valid
   # token. See Keycloak__SkipCertificateValidation below for the actual stopgap.
   Keycloak__Enabled: "true"
-  Keycloak__Authority: "https://keycloak.home.arpa/realms/k8s"
+  Keycloak__Authority: "https://keycloak.blogdoft.dev/realms/k8s"
   Keycloak__Audience: "code-brain"
   Keycloak__MetadataAddress: "http://keycloak.keycloak.svc.cluster.local:8080/realms/k8s/.well-known/openid-configuration"
   Keycloak__RequireHttpsMetadata: "false"
   # MetadataAddress above only redirects the discovery document fetch - the JWKS URI *inside* that
-  # document is still Keycloak's own public https://keycloak.home.arpa, and this pod's container
+  # document is still Keycloak's own public https://keycloak.blogdoft.dev, and this pod's container
   # doesn't trust the private CA that signs it, so token signature validation still fails (every
   # request 401s, even with a fully valid token). "true" here is the stopgap that actually fixes
   # that: it skips the certificate check entirely (equivalent to curl -k) so validation succeeds
