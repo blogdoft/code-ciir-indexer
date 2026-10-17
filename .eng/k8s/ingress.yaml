@@ -18,14 +18,12 @@ metadata:
     traefik.ingress.kubernetes.io/router.middlewares: code-brain-code-ciir-indexer-strip-code-brain@kubernetescrd
 spec:
   ingressClassName: traefik
-  # Serve the blogdoft.home.arpa certificate requested by code-rag-front's Ingress
-  # (cert-manager annotation there). No annotation here on purpose: several Ingresses
-  # requesting the same secret would make cert-manager fight over it. The *.home.arpa
+  # The blogdoft.home.arpa certificate is requested by the welcome-cluster Ingress (its own
+  # namespace); no secretName here on purpose, Traefik picks that certificate by SNI. The *.home.arpa
   # wildcard alone is rejected by Edge/Chrome because home.arpa is a public suffix.
   tls:
     - hosts:
         - blogdoft.home.arpa
-      secretName: blogdoft-tls
   rules:
     - host: blogdoft.home.arpa
       http:
