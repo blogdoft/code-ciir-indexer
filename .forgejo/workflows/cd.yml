@@ -1,0 +1,166 @@
+# Continuous delivery, triggered by every push to main: runs ci.yml as a gate, releases the commit
+# (next vX.Y.Z tag + release notes), then builds and publishes
+# the image to this repo's Forgejo Container Registry and deploys it by stamping the version onto
+# .eng/k8s/ and pushing the result into the argo-local-apps GitOps repo
+# (manifests/code-brain/code-ciir-indexer/) - ArgoCD takes it from there.
+# Every push to main that passes ci.yml is released: .forgejo/scripts/release.sh picks the bump from
+# the conventional commits since the last tag (`type!:` or a BREAKING CHANGE footer = major,
+# `feat` = minor, anything else = patch) and creates the vX.Y.Z tag and its release notes through
+# the Forgejo API. The image built from that commit carries the version.
+# Nothing that only validates the code belongs here: put it in ci.yml. To add a release or
+# deploy step, add it to `publish` or `deploy` (or a new job in the chain).
+#
+# Requires, under Settings > Actions:
+#   - Variables: REGISTRY, REGISTRY_IMAGE, REGISTRY_USERNAME, ARGO_SSH_KNOWN_HOSTS (pinned host
+#     key line(s) of forgejo.home.arpa:2222)
+#   - Secrets: RELEASE_TOKEN (optional: a Forgejo token that can write this repo's releases; the
+#     release job falls back to the workflow's own token when unset)
+#     REGISTRY_PASSWORD (token with package-write scope), ARGO_DEPLOY_SSH_KEY (private key of a
+#     dedicated write-access deploy key on sauron/argo-local-apps)
+
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+# Runs are queued (not cancelled): each one computes the next version from the tags left by the
+# previous one, so they must not overlap.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.forgejo/workflows/ci.yml
+    secrets: inherit
+
+  release:
+    needs: ci
+    runs-on: self-hosted
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The next version is derived from the commits since the last tag.
+          fetch-depth: 0
+
+      - name: Install jq and curl
+        run: apk add --no-cache jq curl
+
+      - name: Create tag and release notes (conventional commits)
+        id: release
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+        run: bash .forgejo/scripts/release.sh
+
+  publish:
+    needs: release
+    runs-on: self-hosted
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+    outputs:
+      deploy_tag: ${{ steps.tag.outputs.deploy_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to the container registry
+        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login "${{ vars.REGISTRY }}" -u "${{ vars.REGISTRY_USERNAME }}" --password-stdin
+
+      - name: Determine image tags
+        id: tag
+        run: |
+          tags="${{ vars.REGISTRY }}/${{ vars.REGISTRY_IMAGE }}:${VERSION} ${{ vars.REGISTRY }}/${{ vars.REGISTRY_IMAGE }}:latest"
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "deploy_tag=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build image
+        run: |
+          build_args=()
+          for t in ${{ steps.tag.outputs.tags }}; do build_args+=(-t "$t"); done
+          docker build --build-arg VERSION="${VERSION}" "${build_args[@]}" -f .eng/docker/Dockerfile .
+
+      - name: Push image
+        run: |
+          for t in ${{ steps.tag.outputs.tags }}; do docker push "$t"; done
+
+  deploy:
+    needs: publish
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kustomize
+        # Forgejo injects its own GITHUB_TOKEN into every job; github.com rejects it when the
+        # install script uses it, so clear it for this step only.
+        # Job steps run directly on the runner's filesystem, so /tmp persists across runs: skip
+        # reinstalling when a previous run already put a binary there.
+        env:
+          GITHUB_TOKEN: ""
+        run: |
+          if [ ! -x /tmp/kustomize-bin/kustomize ]; then
+            mkdir -p /tmp/kustomize-bin
+            curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s -- /tmp/kustomize-bin
+          fi
+          echo "/tmp/kustomize-bin" >> "$GITHUB_PATH"
+
+      - name: Stamp image into manifests
+        run: |
+          cd .eng/k8s
+          kustomize edit set image "code-ciir-indexer=${{ vars.REGISTRY }}/${{ vars.REGISTRY_IMAGE }}:${{ needs.publish.outputs.deploy_tag }}"
+
+      # The runner image (Alpine) doesn't ship an SSH client.
+      - name: Install openssh-client
+        run: apk add --no-cache openssh-client
+
+      - name: Configure SSH
+        run: |
+          echo "${{ secrets.ARGO_DEPLOY_SSH_KEY }}" > "${{ github.workspace }}/.ssh-key"
+          chmod 600 "${{ github.workspace }}/.ssh-key"
+          echo "${{ vars.ARGO_SSH_KNOWN_HOSTS }}" > "${{ github.workspace }}/.ssh-known-hosts"
+
+      - name: Sync manifests to argo-local-apps
+        env:
+          GIT_SSH_COMMAND: ssh -i ${{ github.workspace }}/.ssh-key -o UserKnownHostsFile=${{ github.workspace }}/.ssh-known-hosts -o StrictHostKeyChecking=yes
+        run: |
+          WORKDIR=$(mktemp -d)
+          git clone --depth 1 ssh://git@forgejo.home.arpa:2222/sauron/argo-local-apps.git "$WORKDIR"
+
+          rm -rf "$WORKDIR/manifests/code-brain/code-ciir-indexer"
+          mkdir -p "$WORKDIR/manifests/code-brain/code-ciir-indexer"
+          cp -r .eng/k8s/. "$WORKDIR/manifests/code-brain/code-ciir-indexer/"
+
+          cd "$WORKDIR"
+          git config user.name "code-ciir-ci"
+          git config user.email "ci@code-ciir.local"
+          git add manifests/code-brain/code-ciir-indexer
+
+          if git diff --cached --quiet; then
+            echo "No manifest changes, skipping commit."
+          else
+            git commit -m "chore(code-ciir): deploy ${{ needs.publish.outputs.deploy_tag }}"
+            git push origin main
+          fi
+
+      - name: Clean up SSH key
+        if: always()
+        run: rm -f "${{ github.workspace }}/.ssh-key" "${{ github.workspace }}/.ssh-known-hosts"
+
+  # Housekeeping: keeps the 10 most recent version tags (releases and their notes are left
+  # untouched). Runs last and only after a successful deploy, so a failure here never blocks or
+  # hides a delivery.
+  prune-tags:
+    needs: deploy
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Delete all but the 10 most recent tags
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          KEEP: "10"
+        run: bash .forgejo/scripts/prune-tags.sh

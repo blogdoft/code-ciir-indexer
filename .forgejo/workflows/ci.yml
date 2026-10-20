@@ -1,0 +1,85 @@
+# Continuous integration: everything that validates the code and publishes nothing. Runs on
+# PRs and is called by cd.yml on every push to main, so the release is gated by the exact same
+# checks. To add a check, add a step to `test` or a new job here -
+# cd.yml needs no change, it waits for every job of this workflow.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+jobs:
+  test:
+    runs-on: self-hosted
+    container:
+      image: mcr.microsoft.com/dotnet/sdk:10.0
+    steps:
+      # actions/checkout is a Node action; the dotnet SDK image doesn't ship Node, and the
+      # Forgejo runner doesn't inject one into custom job containers.
+      - name: Install Node.js
+        run: apt-get update && apt-get install -y --no-install-recommends nodejs
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore
+        run: dotnet restore code-ciir-indexer.slnx
+
+      - name: Build
+        run: dotnet build code-ciir-indexer.slnx --no-restore --configuration Release
+
+      # -m:1 forces MSBuild to run test projects one at a time: CodeCiir.Api.Tests and
+      # CodeCiir.Infrastructure.Database.Tests each spin up a real Postgres/pgvector container
+      # via Testcontainers - running them in parallel on a shared Docker daemon overloads it
+      # while those images pull. The retry is a safety net for transient Testcontainers/Docker
+      # contention (e.g. two overlapping workflow runs), not for masking a genuine regression -
+      # a real test failure fails both attempts identically.
+      - name: Test
+        run: |
+          for attempt in 1 2; do
+            dotnet test code-ciir-indexer.slnx --no-build --configuration Release -m:1 && exit 0
+            echo "::warning::dotnet test failed (attempt $attempt/2) - retrying in case this is Testcontainers/Docker-daemon contention from an overlapping workflow run"
+          done
+          exit 1
+
+  # Analyzes this repository with the BlogDoFT.Ciir .NET tool (dogfooding - see ../code-csharp-ciir).
+  # Only the run on main (the release path) sends the resulting ciir.jsonl to the indexer; a PR
+  # just analyzes, so it never writes to the deployed indexer.
+  # CIIR_BASE_URL, CIIR_PROJECT_ID and CIIR_CLIENT_ID are repo/org variables; CIIR_CLIENT_SECRET is
+  # a repo secret (a confidential Keycloak client with Service accounts enabled).
+  ciir:
+    runs-on: self-hosted
+    container:
+      image: mcr.microsoft.com/dotnet/sdk:10.0
+    steps:
+      - name: Install Node.js
+        run: apt-get update && apt-get install -y --no-install-recommends nodejs
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install BlogDoFT.Ciir
+        run: |
+          dotnet tool install --global BlogDoFT.Ciir
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      # ciir does not restore; without obj/project.assets.json NuGet references stay unresolved.
+      - name: Restore
+        run: dotnet restore code-ciir-indexer.slnx
+
+      - name: Run BlogDoFT.Ciir
+        env:
+          CIIR_BASE_URL: ${{ vars.CIIR_BASE_URL }}
+          CIIR_PROJECT_ID: ${{ vars.CIIR_PROJECT_ID }}
+          CIIR_CLIENT_ID: ${{ vars.CIIR_CLIENT_ID }}
+          CIIR_CLIENT_SECRET: ${{ secrets.CIIR_CLIENT_SECRET }}
+        run: |
+          args=(code-ciir-indexer.slnx --output ciir-output --no-banner --no-progress --fail-on-error)
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            # --insecure (BlogDoFT.Ciir >= 0.5.0): this container doesn't trust the private CA
+            # that signs blogdoft.home.arpa, so certificate validation would fail.
+            args+=(--send "$CIIR_BASE_URL" --projectId "$CIIR_PROJECT_ID" --clientId "$CIIR_CLIENT_ID" --clientSecret "$CIIR_CLIENT_SECRET" --insecure)
+          fi
+          ciir "${args[@]}"
